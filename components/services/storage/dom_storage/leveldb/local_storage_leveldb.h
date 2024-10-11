@@ -97,6 +97,8 @@ class LocalStorageLevelDB : public DomStorageDatabase {
   //      `LocalStorageAreaAccessMetaData` protobuf.
   StatusOr<Metadata> ReadAllMetadata() override;
 
+  DbStatus GetAllKeys(std::vector<std::vector<uint8_t>>* keys) const override;
+
   // Writes LevelDB entries for map usage metadata.  Writes up to two entries
   // for each map in `metadata.map_metadata`:
   //

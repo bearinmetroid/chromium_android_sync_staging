@@ -180,6 +180,15 @@ DbStatus SessionStorageSqlite::PutMetadata(Metadata metadata) {
   return DbStatus::OK();
 }
 
+DbStatus SessionStorageSqlite::GetAllKeys(std::vector<std::vector<uint8_t>>* keys) const {
+  // we have to know all sessions id AND keys for every session ??
+  //  const char kSelectAllMetadata[] =
+  //    "SELECT session_id, storage_key, map_id FROM session_metadata";
+  // do we even need this here?
+
+  return DbStatus::OK();
+}
+
 DbStatus SessionStorageSqlite::DeleteStorageKeysFromSession(
     std::string session_id,
     std::vector<blink::StorageKey> metadata_to_delete,

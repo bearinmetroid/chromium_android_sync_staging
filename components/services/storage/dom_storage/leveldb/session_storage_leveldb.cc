@@ -291,6 +291,13 @@ DbStatus SessionStorageLevelDB::RewriteDB() {
   return leveldb_->RewriteDB();
 }
 
+DbStatus SessionStorageLevelDB::GetAllKeys(std::vector<std::vector<uint8_t>>* keys) const {
+  if (!leveldb_)
+    return DbStatus::IOError(kInvalidDatabaseMessage);
+
+  return leveldb_->GetAllKeys(keys);
+}
+
 DbStatus SessionStorageLevelDB::PutVersionForTesting(int64_t version) {
   return leveldb_->Put(kSessionStorageLevelDBVersionKey,
                        base::as_byte_span(base::NumberToString(version)));

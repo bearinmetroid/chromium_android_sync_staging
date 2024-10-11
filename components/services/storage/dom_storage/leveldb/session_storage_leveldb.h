@@ -115,6 +115,7 @@ class SessionStorageLevelDB : public DomStorageDatabase {
 
   DbStatus PurgeOrigins(std::set<url::Origin> origins) override;
   DbStatus RewriteDB() override;
+  DbStatus GetAllKeys(std::vector<std::vector<uint8_t>>* keys) const override;
 
   // Test-only functions.
   DbStatus PutVersionForTesting(int64_t version) override;

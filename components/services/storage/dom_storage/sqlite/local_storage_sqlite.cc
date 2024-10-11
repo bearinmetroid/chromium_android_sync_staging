@@ -314,6 +314,27 @@ DbStatus LocalStorageSqlite::PurgeOrigins(std::set<url::Origin> origins) {
   return ::storage::PurgeOrigins(*this, std::move(origins));
 }
 
+DbStatus LocalStorageSqlite::GetAllKeys(std::vector<std::vector<uint8_t>>* keys) const {
+  // if (!leveldb_)
+  //   return DbStatus::IOError(kInvalidDatabaseMessage);
+
+  // return leveldb_->GetAllKeys(keys);
+
+  constexpr const char kSelectAllKeys[] =
+      "SELECT storage_key "
+      "FROM maps";
+
+  sql::Statement statement(
+      database_->GetCachedStatement(SQL_FROM_HERE, kSelectAllKeys));
+
+  while (statement.Step()) {
+    // TODO what if key is broken? like in ReadAllMetadata
+    keys->push_back(statement.ColumnBlobAsVector(0));
+  }
+
+  return DbStatus::OK();
+}
+
 DbStatus LocalStorageSqlite::RewriteDB() {
   // SQLite does not need to rewrite its database to fully erase deleted data.
   return DbStatus::OK();

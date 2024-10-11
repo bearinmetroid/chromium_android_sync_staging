@@ -66,6 +66,7 @@ class LocalStorageSqlite : public DomStorageDatabase {
   DbStatus DeleteSessions(std::vector<std::string> session_ids,
                           std::vector<MapLocator> maps_to_delete) override;
   DbStatus PurgeOrigins(std::set<url::Origin> origins) override;
+  DbStatus GetAllKeys(std::vector<std::vector<uint8_t>>* keys) const override;
   DbStatus RewriteDB() override;
   void MakeAllCommitsFailForTesting() override;
   void SetDestructionCallbackForTesting(base::OnceClosure callback) override;

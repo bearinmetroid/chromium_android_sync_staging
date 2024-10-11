@@ -37,12 +37,18 @@
 #include "components/services/storage/dom_storage/dom_storage_database.h"
 #include "components/services/storage/dom_storage/leveldb/local_storage_leveldb.h"
 #include "components/services/storage/dom_storage/leveldb_status_helper.h"
+#include "components/services/storage/dom_storage/leveldb/dom_storage_database_leveldb.h"
+#include "components/services/storage/dom_storage/leveldb/dom_storage_batch_operation_leveldb.h"
+// #include "components/services/storage/dom_storage/local_storage_database.pb.h"
+#include "components/services/storage/public/mojom/local_storage_raw.mojom.h"
 #include "components/services/storage/dom_storage/storage_area_impl.h"
 #include "components/services/storage/public/cpp/constants.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "storage/common/database/database_identifier.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "url/gurl.h"
+#include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
+#include "third_party/leveldatabase/env_chromium.h"
 
 namespace storage {
 namespace {
@@ -205,6 +211,238 @@ LocalStorageImpl::LocalStorageImpl(
         base::BindOnce(&LocalStorageImpl::OnReceiverDisconnected,
                        weak_ptr_factory_.GetWeakPtr()));
   }
+}
+
+void LocalStorageImpl::GetKeysImpl(
+  GetKeysCallback callback
+  ) {
+  database_->RunDatabaseTask(
+    base::BindOnce(
+      [](DomStorageDatabase& db) {
+        std::unique_ptr<std::vector<std::vector<uint8_t>>> keys = std::make_unique<std::vector<std::vector<uint8_t>>>();
+        auto status = db.GetAllKeys(keys.get());
+        auto response = storage::mojom::LocalStorageKeysResponse::New();
+        if (status.ok()) {
+          response->status = "ok";
+          response->keys = *keys.release();
+        } else {
+          response->status = status.ToString();
+        }
+        return response;
+      }
+    ),
+    base::BindOnce([](
+        GetKeysCallback callback,
+        storage::mojom::LocalStorageKeysResponsePtr response
+      ) {
+        std::move(callback).Run(std::move(response));
+      },
+      std::move(callback)
+    )
+  );
+}
+
+void LocalStorageImpl::GetKeys(GetKeysCallback callback) {
+  RunWhenConnected(base::BindOnce(&LocalStorageImpl::GetKeysImpl,
+                                  weak_ptr_factory_.GetWeakPtr(),
+                                  std::move(callback)));
+}
+
+void LocalStorageImpl::GetEntryImpl(
+  const std::vector<uint8_t>& dom_storage_key,
+  GetEntryCallback callback
+  ) {
+  database_->RunDatabaseTask(
+    base::BindOnce(
+      [](
+        std::optional<blink::StorageKey> blink_storage_key,
+        DomStorageDatabase& db) -> StatusOr<std::map<DomStorageDatabase::Key, DomStorageDatabase::Value>> {
+        if (!blink_storage_key) {
+          return base::unexpected(
+            DbStatus::Corruption("namespace storage key is invalid"));
+        }
+
+        DomStorageDatabase::MapLocator map_locator =
+          DomStorageDatabase::MapLocator(kLocalStorageSessionId,
+                                       *blink_storage_key);
+
+        return db.ReadMapKeyValues(std::move(map_locator));
+
+
+
+        // std::unique_ptr<std::vector<uint8_t>> value = std::make_unique<std::vector<uint8_t>>();
+        // auto status = db.Get(key, value.get());
+        // auto response = storage::mojom::LocalStorageGetEntryResponse::New();
+        // if (status.ok()) {
+        //   response->status = "ok";
+        //   response->value = *value.release();
+        // } else if (status.IsNotFound()) {
+        //   response->status = "not found";
+        // } else {
+        //   response->status = status.ToString();
+        // }
+      },
+      blink::StorageKey::Deserialize(
+        std::string_view(reinterpret_cast<const char*>(dom_storage_key.data()), dom_storage_key.size())
+      )
+    ),
+    base::BindOnce([](
+      const DomStorageDatabase::Key dom_storage_key,
+      GetEntryCallback callback,
+      StatusOr<std::map<DomStorageDatabase::Key, DomStorageDatabase::Value>>
+          map_key_values) {
+
+        auto response = storage::mojom::LocalStorageGetEntryResponse::New();
+
+        if (map_key_values.has_value()) {
+          std::map<DomStorageDatabase::Key, DomStorageDatabase::Value>
+            key_value_results;
+
+          key_value_results = *std::move(map_key_values);
+          auto value = key_value_results.find(dom_storage_key);
+          if (value != key_value_results.end()) {
+            response->status = "ok";
+            response->value = value->second;
+          } else {
+            response->status = "not found";
+          }
+        } else {
+          response->status = map_key_values.error().ToString();
+        }
+        // return response;
+        // dom_storage_key,
+        std::move(callback).Run(std::move(response));
+      },
+      dom_storage_key,
+      std::move(callback)
+    )
+  );
+}
+
+void LocalStorageImpl::GetEntry(
+  const std::vector<uint8_t>& key,
+  GetEntryCallback callback) {
+  RunWhenConnected(base::BindOnce(&LocalStorageImpl::GetEntryImpl,
+                                  weak_ptr_factory_.GetWeakPtr(),
+                                  std::move(key),
+                                  std::move(callback)));
+}
+
+void LocalStorageImpl::PutEntryImpl(
+  const std::vector<uint8_t>& key,
+  const std::vector<uint8_t>& value,
+  PutEntryCallback callback
+  ) {
+
+  database_->RunDatabaseTask(
+    base::BindOnce(
+      [](const std::vector<uint8_t>& key, const std::vector<uint8_t>& value, DomStorageDatabase& db) {
+
+        std::vector<DomStorageDatabase::MapBatchUpdate> commits;
+        std::optional<blink::StorageKey> blink_storage_key = blink::StorageKey::Deserialize(
+          std::string_view(reinterpret_cast<const char*>(key.data()), key.size())
+        );
+        if (!blink_storage_key) {
+          return DbStatus::Corruption("namespace storage key is invalid");
+        }
+
+        DomStorageDatabase::MapBatchUpdate commit(
+          DomStorageDatabase::MapLocator(kLocalStorageSessionId,
+                                         *blink_storage_key)
+        );
+        commit.entries_to_add.emplace_back(std::move(key),
+                                           std::move(value));
+        commits.push_back(std::move(commit));
+        return db.UpdateMaps(std::move(commits));
+
+        // std::unique_ptr<DomStorageBatchOperationLevelDB> batch = db.CreateBatchOperation();
+        // batch->Put(key, value);
+        // return batch->Commit();
+      },
+      std::move(key),
+      std::move(value)
+    ),
+    base::BindOnce([](
+        PutEntryCallback callback,
+        storage::DbStatus status)
+      {
+        if (status.ok()) {
+          std::move(callback).Run("ok");
+        } else {
+          std::move(callback).Run(status.ToString());
+        }
+      },
+      std::move(callback)
+    )
+  );
+}
+
+void LocalStorageImpl::PutEntry(
+  const std::vector<uint8_t>& key,
+  const std::vector<uint8_t>& value,
+  PutEntryCallback callback
+  ) {
+  RunWhenConnected(base::BindOnce(&LocalStorageImpl::PutEntryImpl,
+                                  weak_ptr_factory_.GetWeakPtr(),
+                                  std::move(key),
+                                  std::move(value),
+                                  std::move(callback)));
+}
+
+
+void LocalStorageImpl::DeleteEntryImpl(
+  const std::vector<uint8_t>& key,
+  DeleteEntryCallback callback
+  ) {
+
+  database_->RunDatabaseTask(
+    base::BindOnce(
+      [](const std::vector<uint8_t>& key, DomStorageDatabase& db) {
+
+        std::vector<DomStorageDatabase::MapBatchUpdate> commits;
+        std::optional<blink::StorageKey> blink_storage_key = blink::StorageKey::Deserialize(
+          std::string_view(reinterpret_cast<const char*>(key.data()), key.size())
+        );
+        if (!blink_storage_key) {
+          return DbStatus::Corruption("namespace storage key is invalid");
+        }
+
+        DomStorageDatabase::MapBatchUpdate commit(
+          DomStorageDatabase::MapLocator(kLocalStorageSessionId,
+                                         *blink_storage_key)
+        );
+        commit.keys_to_delete.emplace_back(std::move(key));
+        commits.push_back(std::move(commit));
+        return db.UpdateMaps(std::move(commits));
+
+
+        // std::unique_ptr<DomStorageBatchOperationLevelDB> batch = db.CreateBatchOperation();
+        // batch->Delete(key);
+        // return batch->Commit();
+      },
+      std::move(key)
+    ),
+    base::BindOnce([](
+      DeleteEntryCallback callback,
+      storage::DbStatus status) {
+        if (status.ok()) {
+          std::move(callback).Run("ok");
+        } else {
+          std::move(callback).Run(status.ToString());
+        }
+      },
+      std::move(callback)
+    )
+  );
+}
+
+void LocalStorageImpl::DeleteEntry(
+  const std::vector<uint8_t>& key,
+  DeleteEntryCallback callback) {
+  RunWhenConnected(base::BindOnce(&LocalStorageImpl::DeleteEntryImpl,
+                                  weak_ptr_factory_.GetWeakPtr(),
+                                  std::move(key),
+                                  std::move(callback)));
 }
 
 void LocalStorageImpl::BindStorageArea(

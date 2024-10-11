@@ -347,6 +347,13 @@ DbStatus LocalStorageLevelDB::PurgeOrigins(std::set<url::Origin> origins) {
   return ::storage::PurgeOrigins(*this, std::move(origins));
 }
 
+DbStatus LocalStorageLevelDB::GetAllKeys(std::vector<std::vector<uint8_t>>* keys) const {
+  if (!leveldb_)
+    return DbStatus::IOError(kInvalidDatabaseMessage);
+
+  return leveldb_->GetAllKeys(keys);
+}
+
 DbStatus LocalStorageLevelDB::RewriteDB() {
   return leveldb_->RewriteDB();
 }

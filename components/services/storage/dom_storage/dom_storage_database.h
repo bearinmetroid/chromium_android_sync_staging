@@ -263,6 +263,7 @@ class DomStorageDatabase {
   // Deep copies a map's key/value pairs from one session to another.
   virtual DbStatus CloneMap(MapLocator source_map, MapLocator target_map) = 0;
 
+  virtual DbStatus GetAllKeys(std::vector<std::vector<uint8_t>>* keys) const;
   // Get all map locators along with their size and usage. Also gets the next
   // available map id that the database will assign to a newly created map.
   virtual StatusOr<Metadata> ReadAllMetadata() = 0;

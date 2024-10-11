@@ -67,6 +67,7 @@ class DomStorageDatabaseLevelDB
   // removed from each key.
   StatusOr<std::map<Key, Value>> GetMapKeyValues(KeyView prefix);
 
+  DbStatus GetAllKeys(std::vector<std::vector<uint8_t>>* keys) const;
   DbStatus RewriteDB();
 
   bool ShouldFailAllCommitsForTesting();
