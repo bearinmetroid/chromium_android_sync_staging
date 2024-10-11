@@ -53,6 +53,7 @@ schema_sources_ = [
   "content_settings.json",
   "autofill_private.idl",
   "resources_private.idl",
+  "profiles.idl",
 ]
 
 if (enable_service_discovery) {
