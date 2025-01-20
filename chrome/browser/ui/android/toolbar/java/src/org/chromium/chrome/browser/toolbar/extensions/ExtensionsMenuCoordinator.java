@@ -26,10 +26,13 @@ import org.chromium.chrome.browser.theme.ThemeColorProvider;
 import org.chromium.chrome.browser.toolbar.MenuBuilderHelper;
 import org.chromium.chrome.browser.ui.browser_window.ChromeAndroidTask;
 import org.chromium.chrome.browser.ui.extensions.R;
+import org.chromium.chrome.browser.ui.extensions.ExtensionsToolbarBridge;
+import org.chromium.chrome.browser.ui.toolbar.InvocationSource;
 import org.chromium.chrome.browser.ui.theme.BrandedColorScheme;
 import org.chromium.components.embedder_support.util.UrlConstants;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.ui.base.PageTransition;
+import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.listmenu.ListMenu;
 import org.chromium.ui.listmenu.ListMenuButton;
 import org.chromium.ui.listmenu.ListMenuDelegate;
@@ -50,6 +53,7 @@ public class ExtensionsMenuCoordinator implements Destroyable {
     private final Context mContext;
     private final ListMenu mExtensionsMenu;
     private final ListMenuButton mExtensionsMenuButton;
+    private final ExtensionsToolbarBridge mExtensionsToolbarBridge;
     private final ThemeColorProvider mThemeColorProvider;
     private final NullableObservableSupplier<Tab> mCurrentTabSupplier;
     private final TabCreator mTabCreator;
@@ -77,6 +81,7 @@ public class ExtensionsMenuCoordinator implements Destroyable {
     public ExtensionsMenuCoordinator(
             Context context,
             ListMenuButton extensionsMenuButton,
+            ExtensionsToolbarBridge extensionsToolbarBridge,
             ThemeColorProvider themeColorProvider,
             ChromeAndroidTask task,
             Profile profile,
@@ -87,6 +92,7 @@ public class ExtensionsMenuCoordinator implements Destroyable {
         mProfile = profile;
         mTabCreator = tabCreator;
         mTask = task;
+        mExtensionsToolbarBridge = extensionsToolbarBridge;
 
         mContentView = LayoutInflater.from(mContext).inflate(R.layout.extensions_menu, null, false);
 
@@ -170,6 +176,10 @@ public class ExtensionsMenuCoordinator implements Destroyable {
         // Instantiate the mediator, which will initialize the JNI bridge to the native code.
         mMediator =
                 new ExtensionsMenuMediator(
+                        /* onItemClick */ (String actionId) -> {
+                          mExtensionsToolbarBridge.executeUserAction(actionId, InvocationSource.TOOLBAR_BUTTON);
+                          mExtensionsMenuButton.dismiss();
+                        },
                         mContext,
                         mTask,
                         mProfile,

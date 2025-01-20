@@ -205,7 +205,7 @@ void ManagementUI::GetLocalizedStrings(
       {"applicationPermissions", IDS_MANAGEMENT_APPLICATIONS_PERMISSIONS},
       {"title", IDS_MANAGEMENT_TITLE},
       {"toolbarTitle", IDS_MANAGEMENT_TOOLBAR_TITLE},
-      {"searchPrompt", IDS_SETTINGS_SEARCH_PROMPT},
+      // {"searchPrompt", IDS_SETTINGS_SEARCH_PROMPT},
       {"clearSearch", IDS_CLEAR_SEARCH},
       {"backButton", IDS_ACCNAME_BACK},
       {"managedWebsites", IDS_MANAGEMENT_MANAGED_WEBSITES},

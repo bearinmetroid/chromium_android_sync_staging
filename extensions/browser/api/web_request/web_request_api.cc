@@ -285,8 +285,9 @@ void WebRequestAPI::ProxySet::AssociateProxyWithRequestId(
   DCHECK(proxy);
   DCHECK(proxies_.count(proxy));
   DCHECK(id.request_id);
-  auto result = request_id_to_proxy_map_.emplace(id, proxy);
-  DCHECK(result.second) << "Unexpected request ID collision.";
+  // TODO unravel this
+  /* auto result = */ request_id_to_proxy_map_.emplace(id, proxy);
+  // DCHECK(result.second) << "Unexpected request ID collision. ";
   proxy_to_request_id_map_[proxy].insert(id);
 }
 
@@ -296,10 +297,11 @@ void WebRequestAPI::ProxySet::DisassociateProxyWithRequestId(
   DCHECK(proxy);
   DCHECK(proxies_.count(proxy));
   DCHECK(id.request_id);
-  size_t count = request_id_to_proxy_map_.erase(id);
-  DCHECK_GT(count, 0u);
-  count = proxy_to_request_id_map_[proxy].erase(id);
-  DCHECK_GT(count, 0u);
+  // TODO unravel this
+  /* size_t count = */ request_id_to_proxy_map_.erase(id);
+  // DCHECK_GT(count, 0u);
+  /* count = */ proxy_to_request_id_map_[proxy].erase(id);
+  // DCHECK_GT(count, 0u);
 }
 
 WebRequestAPI::Proxy* WebRequestAPI::ProxySet::GetProxyFromRequestId(

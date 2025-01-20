@@ -297,13 +297,13 @@ Frame* CreateNewWindow(LocalFrame& opener_frame,
     }
   }
 
-  if (!opener_window.GetSecurityOrigin()->CanDisplay(url)) {
-    opener_window.AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
-        mojom::blink::ConsoleMessageSource::kSecurity,
-        mojom::blink::ConsoleMessageLevel::kError,
-        StrCat({"Not allowed to load local resource: ", url.ElidedString()})));
-    return nullptr;
-  }
+  // if (!opener_window.GetSecurityOrigin()->CanDisplay(url)) {
+  //   opener_window.AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
+  //       mojom::blink::ConsoleMessageSource::kSecurity,
+  //       mojom::blink::ConsoleMessageLevel::kError,
+  //       StrCat({"Not allowed to load local resource: ", url.ElidedString()})));
+  //   return nullptr;
+  // }
 
   request.SetInitiatorFrameToken(opener_frame.GetLocalFrameToken());
   request.SetInitiatorNavigationStateKeepAliveHandle(

@@ -20,6 +20,12 @@
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "extensions/browser/event_router.h"
+#if BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/ui/android/tab_model/tab_model_list.h"
+#include "chrome/browser/ui/android/tab_model/tab_model_observer.h"
+#include "chrome/browser/ui/android/tab_model/tab_model_list_observer.h"
+#include "base/scoped_multi_source_observation.h"
+#endif  // BUILDFLAG(IS_ANDROID)
 
 namespace content {
 class WebContents;
@@ -39,7 +45,9 @@ class TabsEventRouterPlatformDelegate
     : public TabStripModelObserver,
       public BrowserTabStripTrackerDelegate,
       public BrowserListObserver,
-      public resource_coordinator::LifecycleUnitObserver {
+      public TabModelListObserver,
+      public TabModelObserver
+      /* public resource_coordinator::LifecycleUnitObserver */ {
  public:
   TabsEventRouterPlatformDelegate(TabsEventRouter& router, Profile& profile);
 
@@ -49,6 +57,20 @@ class TabsEventRouterPlatformDelegate
       const TabsEventRouterPlatformDelegate&) = delete;
 
   ~TabsEventRouterPlatformDelegate() override;
+
+  // TabModelListObserver
+  void OnTabModelAdded(TabModel* tab_model) override;
+  void OnTabModelRemoved(TabModel* tab_model) override;
+
+  // TabModelObserver
+  void DidAddTab(TabAndroid* tab,
+                 TabModel::TabLaunchType type) override;
+  void DidSelectTab(TabAndroid* tab,
+                    TabModel::TabSelectionType type) override;
+  void DidRemoveTabForClosure(TabAndroid* tab) override;
+  void DidMoveTab(TabAndroid* tab,
+                  int new_index,
+                  int old_index) override;
 
   // BrowserTabStripTrackerDelegate:
   bool ShouldTrackBrowser(BrowserWindowInterface* browser) override;
@@ -74,7 +96,7 @@ class TabsEventRouterPlatformDelegate
   // resource_coordinator::LifecycleUnitObserver:
   void OnLifecycleUnitStateChanged(
       resource_coordinator::LifecycleUnit* lifecycle_unit,
-      ::mojom::LifecycleUnitState previous_state) override;
+      ::mojom::LifecycleUnitState previous_state) /* override */;
 
  private:
   // Methods called from OnTabStripModelChanged.
@@ -106,11 +128,13 @@ class TabsEventRouterPlatformDelegate
   // The main profile that owns this event router.
   raw_ref<Profile> profile_;
 
+#if !BUILDFLAG(IS_ANDROID)
   BrowserTabStripTracker browser_tab_strip_tracker_;
 
   base::ScopedObservation<resource_coordinator::TabLifecycleUnitSource,
                           resource_coordinator::LifecycleUnitObserver>
       tab_source_scoped_observation_{this};
+#endif
 };
 
 }  // namespace extensions

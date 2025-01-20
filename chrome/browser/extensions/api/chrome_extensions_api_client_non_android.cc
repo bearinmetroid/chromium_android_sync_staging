@@ -17,7 +17,7 @@
 // this file becomes minimal in size it should be folded into
 // chrome_extensions_api_client.cc.
 
-static_assert(BUILDFLAG(ENABLE_EXTENSIONS));
+static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 

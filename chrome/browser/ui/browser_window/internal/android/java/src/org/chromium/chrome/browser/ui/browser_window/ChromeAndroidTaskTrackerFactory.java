@@ -21,7 +21,7 @@ public final class ChromeAndroidTaskTrackerFactory {
     public static ChromeAndroidTaskTracker getInstance() {
         // TODO(crbug.com/473636857): Remove once this is properly implemented on non-desktop
         // platforms.
-        if (!BuildConfig.IS_DESKTOP_ANDROID) return null;
+        // if (!BuildConfig.IS_DESKTOP_ANDROID) return null;
 
         return ChromeAndroidTaskTrackerImpl.getInstance();
     }

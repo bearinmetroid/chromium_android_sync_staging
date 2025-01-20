@@ -5,19 +5,23 @@
 package org.chromium.chrome.browser.toolbar.extensions;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Rect;
 import android.view.View;
 
 import org.chromium.base.lifetime.Destroyable;
 import org.chromium.base.supplier.NullableObservableSupplier;
+import org.chromium.build.annotations.Nullable;
 import org.chromium.build.annotations.NullMarked;
 import org.chromium.chrome.browser.extensions.ContextMenuSource;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.ui.browser_window.ChromeAndroidTask;
 import org.chromium.chrome.browser.ui.extensions.ExtensionActionContextMenuBridge;
+import org.chromium.chrome.browser.ui.extensions.ExtensionActionsBridge;
 import org.chromium.chrome.browser.ui.extensions.ExtensionsMenuBridge;
 import org.chromium.chrome.browser.ui.extensions.ExtensionsMenuTypes;
+import org.chromium.chrome.browser.ui.extensions.ExtensionsToolbarBridge;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.ui.listmenu.ListMenuButton;
 import org.chromium.ui.modelutil.MVCListAdapter.ListItem;
@@ -26,6 +30,7 @@ import org.chromium.ui.modelutil.PropertyModel;
 import org.chromium.ui.widget.AnchoredPopupWindow;
 import org.chromium.ui.widget.RectProvider;
 
+import java.util.function.Consumer;
 import java.util.List;
 
 /**
@@ -34,10 +39,12 @@ import java.util.List;
  */
 @NullMarked
 class ExtensionsMenuMediator implements Destroyable, ExtensionsMenuBridge.Observer {
+    private final Consumer<String> mOnItemClick;
     private final ModelList mActionModels;
     private final Context mContext;
     private final NullableObservableSupplier<Tab> mCurrentTabSupplier;
     private final ExtensionsMenuBridge mMenuBridge;
+    private final ExtensionActionsBridge mExtensionActionsBridge;
     private final PropertyModel mMenuPropertyModel;
     private final Runnable mOnReady;
     private final ChromeAndroidTask mTask;
@@ -53,6 +60,7 @@ class ExtensionsMenuMediator implements Destroyable, ExtensionsMenuBridge.Observ
      * @param onReady A runnable to run when the menu is ready to be shown.
      */
     public ExtensionsMenuMediator(
+            Consumer<String> onItemClick,
             Context context,
             ChromeAndroidTask task,
             Profile profile,
@@ -61,6 +69,7 @@ class ExtensionsMenuMediator implements Destroyable, ExtensionsMenuBridge.Observ
             PropertyModel propertyModel,
             View rootView,
             Runnable onReady) {
+        mOnItemClick = onItemClick;
         mActionModels = actionModels;
         mContext = context;
         mCurrentTabSupplier = currentTabSupplier;
@@ -69,6 +78,9 @@ class ExtensionsMenuMediator implements Destroyable, ExtensionsMenuBridge.Observ
         mRootView = rootView;
         mTask = task;
         mProfile = profile;
+
+        mExtensionActionsBridge = new ExtensionActionsBridge(task, profile);
+
         mMenuBridge = new ExtensionsMenuBridge(mTask, mProfile, /* observer= */ this);
 
         mMenuPropertyModel.set(
@@ -158,6 +170,10 @@ class ExtensionsMenuMediator implements Destroyable, ExtensionsMenuBridge.Observ
                 ExtensionsMenuProperties.SITE_SETTINGS_LABEL, siteSettingsState.label);
     }
 
+    private void onItemClick(View view, String actionId) {
+        mOnItemClick.accept(actionId);
+    }
+
     /** Destroys the mediator. */
     @Override
     public void destroy() {
@@ -191,17 +207,30 @@ class ExtensionsMenuMediator implements Destroyable, ExtensionsMenuBridge.Observ
      */
     private void updateMenuEntries() {
         mActionModels.clear();
-        List<ExtensionsMenuTypes.MenuEntryState> entries = mMenuBridge.getMenuEntries();
+
+        Tab currentTab = mCurrentTabSupplier.get();
+        if (currentTab == null ) return;
+        List<ExtensionsMenuTypes.MenuEntryState> entries = mMenuBridge.getMenuEntries(currentTab.isOffTheRecord());
+
+        WebContents webContents = currentTab.getWebContents();
 
         for (ExtensionsMenuTypes.MenuEntryState entry : entries) {
+
+            Bitmap icon =
+                    ExtensionActionIconUtil.getActionIcon(
+                            mContext, mExtensionActionsBridge, entry.id, currentTab.getId(), webContents);
             PropertyModel model =
                     new PropertyModel.Builder(ExtensionsMenuItemProperties.ALL_KEYS)
                             .with(ExtensionsMenuItemProperties.TITLE, entry.actionButton.text)
+                            .with(ExtensionsMenuItemProperties.ICON, icon)
                             .with(
                                     ExtensionsMenuItemProperties.CLICK_LISTENER,
                                     (view) ->
                                             onContextMenuButtonClicked(
                                                     (ListMenuButton) view, entry.id))
+                            .with(
+                                    ExtensionsMenuItemProperties.ITEM_CLICK_LISTENER,
+                                    (view) -> onItemClick(view, entry.id))
                             .build();
             mActionModels.add(new ListItem(0, model));
         }

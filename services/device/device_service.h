@@ -45,8 +45,8 @@
 #include "base/android/scoped_java_ref.h"
 #include "services/device/public/mojom/nfc_provider.mojom.h"
 #else
-#include "services/device/public/mojom/hid.mojom.h"
 #endif
+#include "services/device/public/mojom/hid.mojom.h"
 
 #if BUILDFLAG(ENABLE_COMPUTE_PRESSURE)
 #include "services/device/public/mojom/pressure_manager.mojom.h"
@@ -71,9 +71,9 @@ class SharedURLLoaderFactory;
 
 namespace device {
 
-#if !BUILDFLAG(IS_ANDROID)
+// #if !BUILDFLAG(IS_ANDROID)
 class HidManagerImpl;
-#endif
+// #endif
 
 #if BUILDFLAG(ENABLE_COMPUTE_PRESSURE)
 class PressureManagerImpl;
@@ -199,10 +199,10 @@ class DeviceService : public mojom::DeviceService {
       mojo::PendingReceiver<mojom::VibrationManager> receiver,
       mojo::PendingRemote<mojom::VibrationManagerListener> listener) override;
 
-#if !BUILDFLAG(IS_ANDROID)
+// #if !BUILDFLAG(IS_ANDROID)
   void BindHidManager(
       mojo::PendingReceiver<mojom::HidManager> receiver) override;
-#endif
+// #endif
 
 #if BUILDFLAG(IS_CHROMEOS)
   void BindMtpManager(
@@ -269,8 +269,9 @@ class DeviceService : public mojom::DeviceService {
 
   base::android::ScopedJavaGlobalRef<jobject> java_nfc_delegate_;
 #else
-  std::unique_ptr<HidManagerImpl> hid_manager_;
 #endif
+
+  std::unique_ptr<HidManagerImpl> hid_manager_;
 
 #if BUILDFLAG(ENABLE_COMPUTE_PRESSURE)
   std::unique_ptr<PressureManagerImpl> pressure_manager_;

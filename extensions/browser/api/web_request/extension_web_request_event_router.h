@@ -52,7 +52,7 @@ struct WebRequestInfo;
 inline constexpr int kWebRequestFilterValidSchemes =
     URLPattern::SCHEME_HTTP | URLPattern::SCHEME_HTTPS |
     URLPattern::SCHEME_FTP | URLPattern::SCHEME_FILE |
-    URLPattern::SCHEME_EXTENSION | URLPattern::SCHEME_WS |
+    URLPattern::SCHEME_CHROMEUI | URLPattern::SCHEME_EXTENSION | URLPattern::SCHEME_WS |
     URLPattern::SCHEME_WSS | URLPattern::SCHEME_UUID_IN_PACKAGE;
 
 class WebRequestEventRouter : public KeyedService {

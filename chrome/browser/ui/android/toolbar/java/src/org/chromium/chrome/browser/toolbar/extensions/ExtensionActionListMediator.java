@@ -10,6 +10,7 @@ import android.view.View;
 
 import androidx.annotation.VisibleForTesting;
 
+import org.chromium.base.Callback;
 import org.chromium.base.lifetime.Destroyable;
 import org.chromium.base.lifetime.LifetimeAssert;
 import org.chromium.base.supplier.NullableObservableSupplier;
@@ -43,14 +44,17 @@ class ExtensionActionListMediator implements Destroyable {
     private final Context mContext;
     private final WindowAndroid mWindowAndroid;
     private final ModelList mModels;
+
     private final ChromeAndroidTask mTask;
     private final Profile mProfile;
     private final NullableObservableSupplier<Tab> mCurrentTabSupplier;
     private final ExtensionActionListCoordinator.ActionAnchorViewProvider mActionAnchorViewProvider;
+    private final ListMenuButton mExtensionsButton;
 
     private final ExtensionsToolbarBridge mExtensionsToolbarBridge;
     private final ToolbarDelegate mToolbarDelegate = new ToolbarDelegate();
     private final ToolbarObserver mToolbarObserver = new ToolbarObserver();
+    private final Callback<@Nullable Tab> mCurrentTabObserver = this::onCurrentTabChanged;
 
     @Nullable private final LifetimeAssert mLifetimeAssert = LifetimeAssert.create(this);
 
@@ -64,6 +68,7 @@ class ExtensionActionListMediator implements Destroyable {
     public ExtensionActionListMediator(
             Context context,
             WindowAndroid windowAndroid,
+            ListMenuButton extensionsButton,
             ModelList models,
             ChromeAndroidTask task,
             Profile profile,
@@ -77,11 +82,14 @@ class ExtensionActionListMediator implements Destroyable {
         mProfile = profile;
         mCurrentTabSupplier = currentTabSupplier;
         mActionAnchorViewProvider = actionAnchorViewProvider;
+        mCurrentTabSupplier.addSyncObserver(mCurrentTabObserver);
         mExtensionsToolbarBridge = extensionsToolbarBridge;
+        mExtensionsButton = extensionsButton;
 
         mExtensionsToolbarBridge.setDelegate(mToolbarDelegate);
         mExtensionsToolbarBridge.addObserver(mToolbarObserver);
         reconcileActionItems();
+
     }
 
     @Override
@@ -93,15 +101,18 @@ class ExtensionActionListMediator implements Destroyable {
         LifetimeAssert.setSafeToGc(mLifetimeAssert, true);
     }
 
+    private void onCurrentTabChanged(@Nullable Tab tab) {
+        reconcileActionItems();
+    }
+
     /**
      * Reconciles the current list of models with the list of IDs from the bridge. This handles
      * additions, removals, and reordering without rebuilding the whole list.
      */
     @VisibleForTesting
     void reconcileActionItems() {
-        String[] actionIds = mExtensionsToolbarBridge.getPinnedActionIds();
-
         Tab currentTab = mCurrentTabSupplier.get();
+        String[] actionIds = mExtensionsToolbarBridge.getPinnedActionIds(currentTab == null || currentTab.isOffTheRecord());
         WebContents webContents = currentTab != null ? currentTab.getWebContents() : null;
 
         // Optimization: Remove items that are no longer present in the new list.
@@ -254,14 +265,16 @@ class ExtensionActionListMediator implements Destroyable {
     private void triggerPopup(String actionId, long nativeHostPtr) {
         // TODO(crbug.com/385987224): Do not open a popup again when the user clicks the action
         // button while its popup is open.
+        // or we can just close popup if the user clicks the extension icon again
         closePopup();
 
         ExtensionActionPopupContents contents = ExtensionActionPopupContents.create(nativeHostPtr);
 
         View buttonView = mActionAnchorViewProvider.getButtonViewForId(actionId);
         if (buttonView == null) {
-            contents.destroy();
-            return;
+            buttonView = mExtensionsButton;
+            // contents.destroy();
+            // return;
         }
 
         assert mCurrentPopup == null;

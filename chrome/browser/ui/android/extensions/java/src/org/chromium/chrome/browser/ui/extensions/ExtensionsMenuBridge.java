@@ -43,8 +43,8 @@ public class ExtensionsMenuBridge implements Destroyable {
     }
 
     /** Returns the list of menu entries with their states from native. */
-    public List<ExtensionsMenuTypes.MenuEntryState> getMenuEntries() {
-        return ExtensionsMenuBridgeJni.get().getMenuEntries(mNativeExtensionsMenuDelegateAndroid);
+    public List<ExtensionsMenuTypes.MenuEntryState> getMenuEntries(boolean incognito) {
+        return ExtensionsMenuBridgeJni.get().getMenuEntries(mNativeExtensionsMenuDelegateAndroid, incognito);
     }
 
     /** Returns the site settings state from native. */
@@ -111,7 +111,8 @@ public class ExtensionsMenuBridge implements Destroyable {
         /** Returns the list of menu entries with their states from native. */
         @JniType("std::vector<base::android::ScopedJavaLocalRef<jobject>>")
         List<ExtensionsMenuTypes.MenuEntryState> getMenuEntries(
-                long nativeExtensionsMenuDelegateAndroid);
+                long nativeExtensionsMenuDelegateAndroid,
+                boolean incognito);
 
         /** Returns whether the native menu model is ready. */
         boolean isReady(long nativeExtensionsMenuDelegateAndroid);

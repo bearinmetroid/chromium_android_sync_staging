@@ -21,5 +21,8 @@ public class ExtensionsMenuItemProperties {
     public static final WritableObjectPropertyKey<View.OnClickListener> CLICK_LISTENER =
             new WritableObjectPropertyKey<>();
 
-    public static final PropertyKey[] ALL_KEYS = new PropertyKey[] {ICON, TITLE, CLICK_LISTENER};
+    public static final WritableObjectPropertyKey<View.OnClickListener> ITEM_CLICK_LISTENER =
+            new WritableObjectPropertyKey<>();
+
+    public static final PropertyKey[] ALL_KEYS = new PropertyKey[] {ICON, TITLE, CLICK_LISTENER, ITEM_CLICK_LISTENER};
 }

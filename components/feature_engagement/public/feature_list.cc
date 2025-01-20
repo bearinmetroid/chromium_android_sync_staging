@@ -232,7 +232,7 @@ const base::Feature* const kAllFeatures[] = {
     &kIPHGlicTrustFirstOnboardingShortcutToastPromoFeature,
     &kIPHGlicTryItFeature,
     &kIPHHistorySearchFeature,
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
     &kIPHExtensionsMenuFeature,
     &kIPHExtensionsRequestAccessButtonFeature,
     &kIPHExtensionsZeroStatePromoFeature,

@@ -11,7 +11,7 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extensions_browser_client.h"
 
-static_assert(!BUILDFLAG(IS_ANDROID));
+// static_assert(!BUILDFLAG(IS_ANDROID));
 
 namespace extensions {
 

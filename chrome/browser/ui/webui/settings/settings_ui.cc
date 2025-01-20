@@ -232,8 +232,10 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
 #if BUILDFLAG(IS_CHROMEOS)
   AddSettingsPageUIHandler(std::make_unique<LanguagesHandler>(profile));
 #endif  // BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_ANDROID)
   html_source->AddBoolean("axTreeFixingEnabled", base::FeatureList::IsEnabled(
                                                      features::kAXTreeFixing));
+#endif
 
   AddSettingsPageUIHandler(std::make_unique<AccessibilityMainHandler>());
   AddSettingsPageUIHandler(std::make_unique<BrowserLifetimeHandler>());
@@ -623,6 +625,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
   html_source->AddBoolean("showAiPageAiFeatureSection",
                           show_ai_features_section);
 
+#if !BUILDFLAG(IS_ANDROID)
   // Delete Browsing Data
   html_source->AddBoolean(
       "enableDeleteBrowsingDataRevamp",
@@ -630,6 +633,7 @@ SettingsUI::SettingsUI(content::WebUI* web_ui)
   html_source->AddBoolean(
       "enableBrowsingHistoryActorIntegrationM1",
       history::IsBrowsingHistoryActorIntegrationM1Enabled());
+#endif
 
   html_source->AddBoolean(
       "enableSupportForHomeAndWork",
@@ -743,6 +747,9 @@ void SettingsUI::AddSettingsPageUIHandler(
 }
 
 void SettingsUI::TryShowHatsSurveyWithTimeout() {
+#if BUILDFLAG(IS_ANDROID)
+  return;
+#else
   HatsService* hats_service =
       HatsServiceFactory::GetForProfile(Profile::FromWebUI(web_ui()),
                                         /* create_if_necessary = */ true);
@@ -754,6 +761,7 @@ void SettingsUI::TryShowHatsSurveyWithTimeout() {
         kHatsSurveyTriggerSettings, web_ui()->GetWebContents(), timeout_ms, {},
         {}, HatsService::NavigationBehavior::REQUIRE_SAME_ORIGIN);
   }
+#endif
 }
 
 #if !BUILDFLAG(IS_CHROMEOS)

@@ -87,8 +87,8 @@ public class ExtensionActionsUpdateHelper implements Destroyable {
 
         // TODO(crbug.com/385984462): Show pinned actions only. For now, we pretend that all actions
         // are pinned.
-        String[] actionIds = mExtensionActionsBridge.getActionIds();
-
+        // Ultimatum browser: not only pinned but also take incognito mode in account
+        String[] actionIds = mExtensionActionsBridge.getPinnedActionIds(mCurrentTab.isOffTheRecord());
         List<ListItem> items = new ArrayList<>(actionIds.length);
         for (String actionId : actionIds) {
             items.add(

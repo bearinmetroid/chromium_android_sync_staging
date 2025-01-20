@@ -12,6 +12,9 @@
 #include "ui/gfx/android/java_bitmap.h"
 #include "ui/gfx/image/image_skia.h"
 
+#include "extensions/browser/extension_util.h"
+#include "chrome/browser/profiles/profile.h"
+
 // Must come after all headers that specialize FromJniType() / ToJniType().
 #include "chrome/browser/ui/android/extensions/jni_headers/ExtensionsMenuBridge_jni.h"
 #include "chrome/browser/ui/android/extensions/jni_headers/ExtensionsMenuTypes_jni.h"
@@ -51,14 +54,17 @@ void ExtensionsMenuDelegateAndroid::Destroy(JNIEnv* env) {
 }
 
 std::vector<base::android::ScopedJavaLocalRef<jobject>>
-ExtensionsMenuDelegateAndroid::GetMenuEntries(JNIEnv* env) {
+ExtensionsMenuDelegateAndroid::GetMenuEntries(JNIEnv* env, bool incognito) {
   std::vector<base::android::ScopedJavaLocalRef<jobject>> java_entries;
 
   for (const auto& action_model : menu_model_->action_models()) {
+    extensions::ExtensionId id = action_model->GetId();
+    if (incognito && !util::IsIncognitoEnabled(id, browser_->GetProfile())) {
+      continue;
+    }
     // TODO(crbug.com/471016915): Use the correct size for the icon once
     // implemented. For now, using a placeholder.
     auto icon_size = gfx::Size();
-    extensions::ExtensionId id = action_model->GetId();
     ExtensionsMenuViewModel::MenuEntryState state =
         menu_model_->GetMenuEntryState(id, icon_size);
 

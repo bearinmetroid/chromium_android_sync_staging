@@ -67,7 +67,7 @@ class ExtensionsToolbarAndroid : public ExtensionsToolbarViewModel::Delegate,
       int canvas_height_dp,
       float scale_factor);
   std::vector<ToolbarActionsModel::ActionId> GetAllActionIds(JNIEnv* env);
-  std::vector<ToolbarActionsModel::ActionId> GetPinnedActionIds(JNIEnv* env);
+  std::vector<ToolbarActionsModel::ActionId> GetPinnedActionIds(JNIEnv* env, bool incognito);
   void ExecuteUserAction(const ToolbarActionsModel::ActionId& action_id,
                          ToolbarActionViewModel::InvocationSource source);
   void MovePinnedAction(const ToolbarActionsModel::ActionId& action_id,

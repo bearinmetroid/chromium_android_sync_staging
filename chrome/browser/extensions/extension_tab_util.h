@@ -22,6 +22,8 @@
 #include "extensions/buildflags/buildflags.h"
 #include "extensions/common/mojom/context_type.mojom-forward.h"
 #include "ui/base/window_open_disposition.h"
+// #include "chrome/browser/ui/android/tab_model/tab_model.h"
+#include "chrome/browser/android/tab_android.h"
 
 static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
@@ -280,7 +282,7 @@ class ExtensionTabUtil {
       const Extension* extension,
       content::BrowserContext* browser_context);
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   // Opens a tab for the specified `web_contents`.
   static void CreateTab(std::unique_ptr<content::WebContents> web_contents,
                         const std::string& extension_id,
@@ -304,7 +306,7 @@ class ExtensionTabUtil {
   static WindowController* GetWindowControllerOfTab(
       content::WebContents* web_contents);
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   // Open the extension's options page. Returns true if an options page was
   // successfully opened (though it may not necessarily *load*, e.g. if the
   // URL does not exist). This call to open the options page is initiated by
