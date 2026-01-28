@@ -137,6 +137,7 @@ class WebRequestEventRouter : public KeyedService {
     // Response values. These are mutually exclusive.
     bool cancel;
     GURL new_url;
+    extension_web_request_api_helpers::BlockingResponse response;
     std::unique_ptr<net::HttpRequestHeaders> request_headers;
     std::unique_ptr<extension_web_request_api_helpers::ResponseHeaders>
         response_headers;
@@ -188,6 +189,7 @@ class WebRequestEventRouter : public KeyedService {
                       WebRequestInfo* request,
                       net::CompletionOnceCallback callback,
                       GURL* new_url,
+                      extension_web_request_api_helpers::BlockingResponse* response,
                       bool* should_collapse_initiator);
 
   using BeforeSendHeadersCallback =
