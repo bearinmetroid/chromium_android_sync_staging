@@ -218,11 +218,12 @@ public abstract class FirstRunFlowSequencer {
      */
     public static boolean checkIfFirstRunIsNecessary(
             boolean preferLightweightFre, Intent fromIntent) {
-        boolean isCct =
-                fromIntent.getBooleanExtra(
-                                FirstRunActivityBase.EXTRA_CHROME_LAUNCH_INTENT_IS_CCT, false)
-                        || LaunchIntentDispatcher.isCustomTabIntent(fromIntent);
-        return checkIfFirstRunIsNecessary(preferLightweightFre, isCct);
+        return false;
+        // boolean isCct =
+        //         fromIntent.getBooleanExtra(
+        //                         FirstRunActivityBase.EXTRA_CHROME_LAUNCH_INTENT_IS_CCT, false)
+        //                 || LaunchIntentDispatcher.isCustomTabIntent(fromIntent);
+        // return checkIfFirstRunIsNecessary(preferLightweightFre, isCct);
     }
 
     /**
