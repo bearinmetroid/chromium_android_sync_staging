@@ -2386,8 +2386,9 @@ public class ChromeTabbedActivity extends ChromeActivity implements PreAttachInt
                 ReturnToChromeUtil.recordHomeSurfaceShownAtStartup();
                 ReturnToChromeUtil.recordHomeSurfaceShown();
             }
-
-            mTabModelOrchestrator.restoreTabs(activeTabBeingRestored);
+            if(!ContextUtils.getAppSharedPreferences().getBoolean(PREF_CLOSE_TABS_ON_EXIT, false)) {
+              mTabModelOrchestrator.restoreTabs(activeTabBeingRestored);
+            }
 
             // Only create an initial tab if no tabs were restored and no intent was handled.
             // Also, check whether the active tab was supposed to be restored and that the total
