@@ -218,6 +218,8 @@ public abstract class FirstRunFlowSequencer {
      */
     public static boolean checkIfFirstRunIsNecessary(
             boolean preferLightweightFre, Intent fromIntent) {
+        // markFlowAsCompleted();
+        FirstRunStatus.setFirstRunFlowComplete(true);
         return false;
         // boolean isCct =
         //         fromIntent.getBooleanExtra(
