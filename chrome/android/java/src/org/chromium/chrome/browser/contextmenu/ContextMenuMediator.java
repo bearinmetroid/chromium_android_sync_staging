@@ -132,24 +132,13 @@ public class ContextMenuMediator {
                 item.model.set(
                         CLICK_LISTENER,
                         // Note: clickItem already includes dismissDialog.
-                        (v) -> {
-                          if (item.model.get(MENU_ITEM_ID) == 0) {
-                            item.model.set(MENU_ITEM_ID, R.id.contextmenu_extensions_menu);
-                          }
-                          clickItem(item.model.get(MENU_ITEM_ID), item.model.get(ENABLED));
-                        });
+                        (v) -> clickItem(item.model.get(MENU_ITEM_ID), item.model.get(ENABLED)));
             }
             if (item.type == ContextMenuItemType.CONTEXT_MENU_ITEM_WITH_ICON_BUTTON) {
                 PropertyModel model = item.model;
                 model.set(
                         END_BUTTON_CLICK_LISTENER,
-                        (v) -> {
-                          if (item.model.get(MENU_ITEM_ID) == 0) {
-                            item.model.set(MENU_ITEM_ID, R.id.contextmenu_extensions_menu);
-                            item.model.set(END_BUTTON_MENU_ID, R.id.contextmenu_extensions_menu);
-                          }
-                          clickItem(model.get(END_BUTTON_MENU_ID), model.get(ENABLED));
-                        });
+                        (v) -> clickItem(model.get(END_BUTTON_MENU_ID), model.get(ENABLED)));
             }
         }
 

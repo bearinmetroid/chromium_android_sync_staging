@@ -68,6 +68,8 @@ void ConfigurePostInstallDialogModel(
     dialog_model_builder.AddParagraph(ui::DialogModelLabel(
         l10n_util::GetStringUTF16(IDS_EXTENSION_INSTALLED_MANAGE_INFO)));
   }
+
+  dialog_model_builder.AddOkButton(base::DoNothing());
 }
 
 void OpenExtensionsShortcutsPage(

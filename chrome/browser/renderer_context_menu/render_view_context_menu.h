@@ -154,9 +154,6 @@ class RenderViewContextMenu
   void AddObserverForTesting(RenderViewContextMenuObserver* observer);
   void RemoveObserverForTesting(RenderViewContextMenuObserver* observer);
 
-  static bool MenuItemMatchesParams(const content::ContextMenuParams& params,
-                                    const extensions::MenuItem* item);
-
  protected:
   Profile* GetProfile() const;
 
