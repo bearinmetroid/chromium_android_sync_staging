@@ -31,6 +31,7 @@ StatusOr<DomStorageDatabase::MapMetadata> ParseMapMetadata(
   // For example:
   // 'namespace-2b437ef2_a816_4f5f_b4fd_0e2e4da516a8-https://example.test/'
   std::string_view key = base::as_string_view(namespace_entry.key);
+  LOG(INFO) << "ParseMapMetadata " << key;
 
   // The key must start with 'namespace-'.
   CHECK(base::StartsWith(key, base::as_string_view(kNamespacePrefix)));
@@ -168,6 +169,21 @@ DbStatus SessionStorageLevelDB::Open(
 StatusOr<std::map<DomStorageDatabase::Key, DomStorageDatabase::Value>>
 SessionStorageLevelDB::ReadMapKeyValues(MapLocator map_locator) {
   return leveldb_->GetMapKeyValues(GetMapPrefix(map_locator.map_id().value()));
+}
+
+StatusOr<std::map<DomStorageDatabase::Key, DomStorageDatabase::Value>>
+SessionStorageLevelDB::ReadKeyValue(const std::vector<uint8_t>& dom_storage_key) {
+  return leveldb_->GetKeyValue(dom_storage_key);
+}
+
+DbStatus SessionStorageLevelDB::DeleteEntry(
+    const std::vector<uint8_t>& dom_storage_key) {
+  return leveldb_->DeleteKey(dom_storage_key);
+}
+
+DbStatus SessionStorageLevelDB::PutEntry(
+      const std::vector<uint8_t>& key, const std::vector<uint8_t>& value) {
+  return leveldb_->PutEntry(key, value);
 }
 
 DbStatus SessionStorageLevelDB::UpdateMaps(

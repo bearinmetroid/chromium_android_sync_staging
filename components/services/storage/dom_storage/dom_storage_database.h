@@ -255,6 +255,14 @@ class DomStorageDatabase {
   virtual StatusOr<std::map<Key, Value>> ReadMapKeyValues(
       MapLocator map_locator) = 0;
 
+  virtual StatusOr<std::map<Key, Value>> ReadKeyValue(
+      const std::vector<uint8_t>& dom_storage_key) = 0;
+
+  virtual DbStatus DeleteEntry(
+      const std::vector<uint8_t>& dom_storage_key) = 0;
+  virtual DbStatus PutEntry(
+      const std::vector<uint8_t>& key, const std::vector<uint8_t>& value) = 0;
+
   // Persist all `map_updates`.  Each update adds, modifies and/or deletes
   // key/value pairs in a map.  Updates optionally includes map usage metadata
   // to persist like last modified time.

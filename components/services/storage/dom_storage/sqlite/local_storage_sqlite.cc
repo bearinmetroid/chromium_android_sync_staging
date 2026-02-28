@@ -146,6 +146,24 @@ LocalStorageSqlite::ReadMapKeyValues(MapLocator map_locator) {
   return map_entries;
 }
 
+StatusOr<std::map<DomStorageDatabase::Key, DomStorageDatabase::Value>>
+LocalStorageSqlite::ReadKeyValue(const std::vector<uint8_t>& dom_storage_key) {
+  // TODO
+  std::map<Key, Value> map_entries = {};
+
+  return map_entries;
+}
+
+DbStatus LocalStorageSqlite::DeleteEntry(
+    const std::vector<uint8_t>& dom_storage_key) {
+  return DbStatus::OK();
+}
+
+DbStatus LocalStorageSqlite::PutEntry(
+      const std::vector<uint8_t>& key, const std::vector<uint8_t>& value) {
+  return DbStatus::OK();
+}
+
 DbStatus LocalStorageSqlite::UpdateMaps(
     std::vector<MapBatchUpdate> map_updates) {
   sql::Transaction transaction(database_.get());

@@ -97,6 +97,22 @@ SessionStorageSqlite::ReadMapKeyValues(MapLocator map_locator) {
   return map_entries_table_->GetMapKeyValues(map_id);
 }
 
+StatusOr<std::map<DomStorageDatabase::Key, DomStorageDatabase::Value>>
+SessionStorageSqlite::ReadKeyValue(const std::vector<uint8_t>& dom_storage_key) {
+  std::map<DomStorageDatabase::Key, DomStorageDatabase::Value> result = {};
+  return result;
+}
+
+DbStatus SessionStorageSqlite::DeleteEntry(
+      const std::vector<uint8_t>& dom_storage_key) {
+  return DbStatus::OK();
+}
+
+DbStatus SessionStorageSqlite::PutEntry(
+    const std::vector<uint8_t>& key, const std::vector<uint8_t>& value) {
+  return DbStatus::OK();
+}
+
 DbStatus SessionStorageSqlite::UpdateMaps(
     std::vector<MapBatchUpdate> map_updates) {
   sql::Transaction transaction(database_.get());

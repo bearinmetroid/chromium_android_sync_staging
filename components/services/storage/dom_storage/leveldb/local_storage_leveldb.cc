@@ -183,6 +183,21 @@ LocalStorageLevelDB::ReadMapKeyValues(MapLocator map_locator) {
   return leveldb_->GetMapKeyValues(GetMapPrefix(map_locator.storage_key()));
 }
 
+StatusOr<std::map<DomStorageDatabase::Key, DomStorageDatabase::Value>>
+LocalStorageLevelDB::ReadKeyValue(const std::vector<uint8_t>& dom_storage_key) {
+  return leveldb_->GetKeyValue(dom_storage_key);
+}
+
+DbStatus LocalStorageLevelDB::DeleteEntry(
+    const std::vector<uint8_t>& dom_storage_key) {
+  return leveldb_->DeleteKey(dom_storage_key);
+}
+
+DbStatus LocalStorageLevelDB::PutEntry(
+    const std::vector<uint8_t>& key, const std::vector<uint8_t>& value) {
+  return leveldb_->PutEntry(key, value);
+}
+
 DbStatus LocalStorageLevelDB::UpdateMaps(
     std::vector<MapBatchUpdate> map_updates) {
   std::unique_ptr<DomStorageBatchOperationLevelDB> leveldb_batch =

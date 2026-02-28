@@ -66,6 +66,10 @@ class DomStorageDatabaseLevelDB
   // Like `GetPrefixed()` above, but returns a map of entries with `prefix`
   // removed from each key.
   StatusOr<std::map<Key, Value>> GetMapKeyValues(KeyView prefix);
+  StatusOr<std::map<Key, Value>> GetKeyValue(const std::vector<uint8_t>& dom_storage_key);
+  DbStatus DeleteKey(const std::vector<uint8_t>& dom_storage_key);
+  DbStatus PutEntry(
+      const std::vector<uint8_t>& key, const std::vector<uint8_t>& value);
 
   DbStatus GetAllKeys(std::vector<std::vector<uint8_t>>* keys) const;
   DbStatus RewriteDB();
