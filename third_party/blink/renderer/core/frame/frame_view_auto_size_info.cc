@@ -132,11 +132,21 @@ bool FrameViewAutoSizeInfo::AutoSizeIfNeeded() {
       size.width() <= max_auto_size_.width() &&
       !frame_view_->GetFrame().GetDocument()->LoadEventFinished() &&
       (new_size.height() < size.height() || new_size.width() < size.width())) {
+    // LOG(INFO) << "DO NOT CHANGE SIZE!!!";
     change_size = false;
   }
 
-  if (change_size && document->location()->protocol() == "chrome-extension:") {
-    if ((new_size.width() > size.width()) || (new_size.height() > size.height())) {
+  if (change_size) {
+    if (document->location()->protocol() == "chrome-extension:") {
+      // LOG(INFO) << "RESIZE width: " << new_size.width() << " height: " << new_size.height();
+      if ((new_size.width() > size.width()) || (new_size.height() > size.height())) {
+        // LOG(INFO) << "frame_view_->GetFrame().GetDocument()->LoadEventFinished() " << frame_view_->GetFrame().GetDocument()->LoadEventFinished();
+        // LOG(INFO) << "running_first_autosize_ " << running_first_autosize_;
+        // LOG(INFO) << "max_auto_size_.height() " << max_auto_size_.height();
+        // LOG(INFO) << "max_auto_size_.width() " << max_auto_size_.width();
+        frame_view_->Resize(new_size.width(), new_size.height());
+      }
+    } else {
       frame_view_->Resize(new_size.width(), new_size.height());
     }
   }

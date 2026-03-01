@@ -1590,6 +1590,7 @@ void LayoutObject::MarkContainerChainForLayout(bool schedule_relayout) {
       if (object->NeedsSimplifiedLayout()) {
         return;
       }
+      // LOG(INFO) << "object->SetNeedsSimplifiedLayout(true);";
       object->SetNeedsSimplifiedLayout(true);
     } else {
       if (object->ChildNeedsFullLayout()) {

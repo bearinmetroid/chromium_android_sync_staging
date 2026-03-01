@@ -1347,6 +1347,7 @@ void LocalFrameView::InvalidateLayoutForViewportConstrainedObjects() {
   if (layout_view && !layout_view->NeedsLayout()) {
     for (const auto& fragment : layout_view->PhysicalFragments()) {
       if (!fragment.StickyDescendants().empty()) {
+        // LOG(INFO) << "layout_view->SetNeedsSimplifiedLayout()";
         layout_view->SetNeedsSimplifiedLayout();
         return;
       }
@@ -1355,7 +1356,8 @@ void LocalFrameView::InvalidateLayoutForViewportConstrainedObjects() {
       }
       for (const auto& fragment_child : fragment.Children()) {
         if (fragment_child->IsFixedPositioned()) {
-          layout_view->SetNeedsSimplifiedLayout();
+          // LOG(INFO) << "layout_view->SetNeedsSimplifiedLayout()";
+          // layout_view->SetNeedsSimplifiedLayout();
           return;
         }
       }
@@ -1630,7 +1632,12 @@ bool LocalFrameView::NeedsLayout() const {
 }
 
 NOINLINE bool LocalFrameView::CheckDoesNotNeedLayout() const {
+  // HERE
   CHECK_FOR_DIRTY_LAYOUT(!LayoutPending());
+  // LOG(INFO) << "LocalFrameView::CheckDoesNotNeedLayout GetLayoutView(): " << !!GetLayoutView();
+  if (GetLayoutView()) {
+    // LOG(INFO) << "LocalFrameView::CheckDoesNotNeedLayout GetLayoutView()->NeedsLayout(): " << GetLayoutView()->NeedsLayout();
+  }
   CHECK_FOR_DIRTY_LAYOUT(!GetLayoutView() || !GetLayoutView()->NeedsLayout());
   CHECK_FOR_DIRTY_LAYOUT(!IsSubtreeLayout());
   return true;
@@ -3371,6 +3378,7 @@ void LocalFrameView::UpdateStyleAndLayout() {
   }
 
 #if DCHECK_IS_ON()
+  // HERE
   if (!Lifecycle().LifecyclePostponed() && !ShouldThrottleRendering()) {
     DCHECK(!frame_->GetDocument()->NeedsLayoutTreeUpdate());
     CheckDoesNotNeedLayout();
