@@ -561,15 +561,15 @@ bool FrameLoader::AllowRequestForThisFrame(const FrameLoadRequest& request) {
     }
   }
 
-  // if (!request.CanDisplay(url)) {
-  //   request.GetOriginWindow()->AddConsoleMessage(
-  //       MakeGarbageCollected<ConsoleMessage>(
-  //           mojom::ConsoleMessageSource::kSecurity,
-  //           mojom::ConsoleMessageLevel::kError,
-  //           StrCat(
-  //               {"Not allowed to load local resource: ", url.ElidedString()})));
-  //   return false;
-  // }
+  if (!request.CanDisplay(url)) {
+    request.GetOriginWindow()->AddConsoleMessage(
+        MakeGarbageCollected<ConsoleMessage>(
+            mojom::ConsoleMessageSource::kSecurity,
+            mojom::ConsoleMessageLevel::kError,
+            StrCat(
+                {"Not allowed to load local resource: ", url.ElidedString()})));
+    return false;
+  }
   return true;
 }
 

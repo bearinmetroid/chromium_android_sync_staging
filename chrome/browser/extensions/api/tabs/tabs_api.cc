@@ -108,9 +108,9 @@ namespace windows = api::windows;
 constexpr char kCannotDetermineLanguageOfUnloadedTab[] =
     "Cannot determine language: tab not loaded";
 constexpr char kFrameNotFoundError[] = "No frame with id * in tab *.";
-constexpr char kCannotUpdateMuteCaptured[] =
-    "Cannot update mute state for tab *, tab has audio or video currently "
-    "being captured";
+// constexpr char kCannotUpdateMuteCaptured[] =
+//     "Cannot update mute state for tab *, tab has audio or video currently "
+//     "being captured";
 
 namespace {
 
@@ -2560,6 +2560,10 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
     return RespondNow(Error(std::move(error)));
   }
 
+#if BUILDFLAG(IS_ANDROID)
+  return RespondNow(GetResult(contents));
+#else
+
   if (DevToolsWindow::IsDevToolsWindow(contents)) {
     return RespondNow(Error(tabs_constants::kNotAllowedForDevToolsError));
   }
@@ -2679,11 +2683,28 @@ ExtensionFunction::ResponseAction TabsUpdateFunction::Run() {
   }
 
   return RespondNow(GetResult(original_contents));
+#endif
 }
 
 bool TabsUpdateFunction::ComputeDefaultTabId(int& tab_id,
                                              content::WebContents*& contents,
                                              std::string& error) {
+#if BUILDFLAG(IS_ANDROID)
+  for (TabModel* model : TabModelList::models()) {
+    if (!include_incognito_information() && model->IsOffTheRecord()) {
+      continue;
+    }
+    if (!model->IsActiveModel()) {
+      continue;
+    }
+    contents = model->GetActiveWebContents();
+    tab_id = ExtensionTabUtil::GetTabId(contents);
+    return true;
+  }
+
+  error = ExtensionTabUtil::kNoCurrentWindowError;
+  return false;
+#else
   const auto* window_controller =
       ChromeExtensionFunctionDetails(this).GetCurrentWindowController();
   if (!window_controller) {
@@ -2701,6 +2722,7 @@ bool TabsUpdateFunction::ComputeDefaultTabId(int& tab_id,
   }
   tab_id = ExtensionTabUtil::GetTabId(contents);
   return true;
+#endif
 }
 
 bool TabsUpdateFunction::UpdateActiveTab(
