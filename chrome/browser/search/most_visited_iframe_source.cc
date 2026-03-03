@@ -11,7 +11,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/grit/new_tab_page_instant_resources.h"
+// #include "chrome/grit/new_tab_page_instant_resources.h"
 #include "components/search/ntp_features.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -44,18 +44,18 @@ void MostVisitedIframeSource::StartDataRequest(
   // available.
   const std::string path(url.GetPath());
 
-  if (path == kTitleHTMLPath) {
-    SendResource(IDR_NEW_TAB_PAGE_INSTANT_MOST_VISITED_TITLE_HTML,
-                 std::move(callback));
-  } else if (path == kTitleCSSPath) {
-    SendResource(IDR_NEW_TAB_PAGE_INSTANT_MOST_VISITED_TITLE_CSS,
-                 std::move(callback));
-  } else if (path == kTitleJSPath) {
-    SendJSWithOrigin(IDR_NEW_TAB_PAGE_INSTANT_MOST_VISITED_TITLE_JS, wc_getter,
-                     std::move(callback));
-  } else {
+  // if (path == kTitleHTMLPath) {
+  //   SendResource(IDR_NEW_TAB_PAGE_INSTANT_MOST_VISITED_TITLE_HTML,
+  //                std::move(callback));
+  // } else if (path == kTitleCSSPath) {
+  //   SendResource(IDR_NEW_TAB_PAGE_INSTANT_MOST_VISITED_TITLE_CSS,
+  //                std::move(callback));
+  // } else if (path == kTitleJSPath) {
+  //   SendJSWithOrigin(IDR_NEW_TAB_PAGE_INSTANT_MOST_VISITED_TITLE_JS, wc_getter,
+  //                    std::move(callback));
+  // } else {
     std::move(callback).Run(nullptr);
-  }
+  // }
 }
 
 std::string MostVisitedIframeSource::GetMimeType(const GURL& url) {

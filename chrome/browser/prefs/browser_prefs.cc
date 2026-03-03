@@ -266,8 +266,8 @@
 #include "components/ntp_tiles/popular_sites_impl.h"
 #include "components/permissions/contexts/geolocation_permission_context_android.h"
 #include "components/webapps/browser/android/install_prompt_prefs.h"
-#include "chrome/browser/ui/webui/management/management_ui.h"
-#include "chrome/browser/ui/webui/settings/settings_ui.h"
+// #include "chrome/browser/ui/webui/management/management_ui.h"
+// #include "chrome/browser/ui/webui/settings/settings_ui.h"
 #else  // BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/actor/ui/actor_ui_state_manager_prefs.h"
 #include "chrome/browser/gcm/gcm_product_util.h"
@@ -1914,8 +1914,8 @@ void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry,
   variations::VariationsService::RegisterProfilePrefs(registry);
   webapps::InstallPromptPrefs::RegisterProfilePrefs(registry);
   bookmarks_webui::RegisterProfilePrefs(registry);
-  ManagementUI::RegisterProfilePrefs(registry);
-  settings::SettingsUI::RegisterProfilePrefs(registry);
+  // ManagementUI::RegisterProfilePrefs(registry);
+  // settings::SettingsUI::RegisterProfilePrefs(registry);
   ThemeService::RegisterProfilePrefs(registry);
 #else   // BUILDFLAG(IS_ANDROID)
   bookmarks_webui::RegisterProfilePrefs(registry);
