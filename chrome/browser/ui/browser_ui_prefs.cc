@@ -52,8 +52,9 @@ registry->RegisterBooleanPref(
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 
 #if BUILDFLAG(IS_ANDROID)
+// TODO
 registry->RegisterBooleanPref(
-      prefs::kPullToRefresh, true,
+      prefs::kPullToRefresh, false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
 #endif
 

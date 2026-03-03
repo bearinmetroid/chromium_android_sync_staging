@@ -252,7 +252,7 @@ public class SwipeRefreshHandler extends TabWebContentsUserData
             @OverscrollAction int type, @BackGestureEventSwipeEdge int initiatingEdge) {
         mSwipeType = type;
         if (type == OverscrollAction.PULL_TO_REFRESH &&
-            ContextUtils.getAppSharedPreferences().getBoolean(PREF_PULL_TO_REFRESH, false)) {
+            !ContextUtils.getAppSharedPreferences().getBoolean(PREF_PULL_TO_REFRESH, false)) {
             if (mSwipeRefreshLayout == null) initSwipeRefreshLayout(mTab.getContext());
             assumeNonNull(mSwipeRefreshLayout);
             attachSwipeRefreshLayoutIfNecessary();

@@ -107,7 +107,7 @@ inline constexpr char kCloseTabsOnExit[] =
     "close_tabs_on_exit_enabled";
 
 inline constexpr char kPullToRefresh[] =
-    "pull_to_refresh_enabled";
+    "pull_to_refresh";
 
 // A boolean specifying whether HTTPS-First Balanced Mode is automatically
 // enabled by the Typically Secure User heuristic. Can only be set to true if
