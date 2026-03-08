@@ -36,8 +36,8 @@
 #else
 #include "services/device/battery/battery_monitor_impl.h"
 #include "services/device/battery/battery_status_service.h"
-#endif
 #include "services/device/hid/hid_manager_impl.h"
+#endif
 
 #if BUILDFLAG(ENABLE_COMPUTE_PRESSURE)
 #include "services/device/compute_pressure/pressure_manager_impl.h"
@@ -205,7 +205,7 @@ void DeviceService::BindVibrationManager(
 #endif
 }
 
-// #if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID)
 void DeviceService::BindHidManager(
     mojo::PendingReceiver<mojom::HidManager> receiver) {
   if (!hid_manager_) {
@@ -213,7 +213,7 @@ void DeviceService::BindHidManager(
   }
   hid_manager_->AddReceiver(std::move(receiver));
 }
-// #endif
+#endif
 
 #if BUILDFLAG(IS_CHROMEOS)
 void DeviceService::BindMtpManager(

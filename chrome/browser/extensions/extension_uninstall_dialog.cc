@@ -46,7 +46,6 @@ static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
 #include "content/public/browser/web_contents.h"
-#include "chrome/browser/download/android/extension_uninstall_dialog_bridge.h"
 #endif
 
 namespace extensions {
@@ -60,7 +59,7 @@ constexpr int kIconSize = 64;
 constexpr char16_t kExtensionRemovedError[] =
     u"Extension was removed before dialog closed.";
 
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
 constexpr char kReferrerId[] = "chrome-remove-extension-dialog";
 #endif
 
@@ -89,10 +88,16 @@ ExtensionUninstallDialog::ExtensionUninstallDialog(
     Profile* profile,
     gfx::NativeWindow parent,
     ExtensionUninstallDialog::Delegate* delegate)
-    : profile_(profile), parent_(parent), delegate_(delegate) {
+    : profile_(profile), parent_(parent), delegate_(delegate)
+#if BUILDFLAG(IS_ANDROID)
+      , extension_uninstall_bridge_(std::make_unique<ExtensionUninstallDialogBridge>())
+#endif
+  {
   DCHECK(delegate_);
-  // if (parent)
-  //   parent_window_tracker_ = ui::NativeWindowTracker::Create(parent);
+#if !BUILDFLAG(IS_ANDROID)
+  if (parent)
+    parent_window_tracker_ = ui::NativeWindowTracker::Create(parent);
+#endif
   profile_observation_.Observe(profile_.get());
 }
 
@@ -108,16 +113,11 @@ void ExtensionUninstallDialog::ConfirmUninstallByExtension(
 }
 
 #if BUILDFLAG(IS_ANDROID)
-void ShowExtensionUninstallAndroidDialogImpl(
-    ExtensionUninstallDialog::DoneCallback done_callback,
+void ExtensionUninstallDialog::ShowExtensionUninstallAndroidDialogImpl(
+    ExtensionUninstallDialog::DoneCallback accept_callback,
+    ExtensionUninstallDialog::DoneCallback cancel_callback,
     const Extension* extension) {
   // DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-
-  auto done = base::SplitOnceCallback(std::move(done_callback));
-  auto accepted = base::BindOnce(std::move(done.first),
-      ExtensionUninstallDialog::CloseAction::CLOSE_ACTION_UNINSTALL);
-  auto canceled = base::BindOnce(std::move(done.second),
-      ExtensionUninstallDialog::CloseAction::CLOSE_ACTION_CANCELED);
 
   content::WebContents* web_contents;
 
@@ -133,10 +133,7 @@ void ShowExtensionUninstallAndroidDialogImpl(
         web_contents ? web_contents->GetNativeView() : nullptr;
     ui::WindowAndroid* window_android =
         view_android ? view_android->GetWindowAndroid() : nullptr;
-    std::unique_ptr<ExtensionUninstallDialogBridge> extension_uninstall_bridge =
-        std::make_unique<ExtensionUninstallDialogBridge>();
-    extension_uninstall_bridge->Show(extension, window_android, std::move(accepted), std::move(canceled));
-    extension_uninstall_bridge.release();
+    extension_uninstall_bridge_->Show(extension, window_android, std::move(accept_callback), std::move(cancel_callback));
   }
 }
 #endif
@@ -174,9 +171,17 @@ void ExtensionUninstallDialog::ConfirmUninstall(
   DCHECK(!dialog_shown_);
 #if BUILDFLAG(IS_ANDROID)
   dialog_shown_ = true;
-  ExtensionUninstallDialog::DoneCallback done_callback =
-    base::BindOnce(&ExtensionUninstallDialog::OnDialogClosed, base::Unretained(this));
-  ShowExtensionUninstallAndroidDialogImpl(std::move(done_callback), extension.get());
+  ExtensionUninstallDialog::DoneCallback accept_callback = base::BindOnce(
+    &ExtensionUninstallDialog::OnDialogClosed,
+    weak_ptr_factory_.GetWeakPtr(),
+    ExtensionUninstallDialog::CloseAction::CLOSE_ACTION_UNINSTALL
+  );
+  ExtensionUninstallDialog::DoneCallback cancel_callback = base::BindOnce(
+    &ExtensionUninstallDialog::OnDialogClosed,
+    weak_ptr_factory_.GetWeakPtr(),
+    ExtensionUninstallDialog::CloseAction::CLOSE_ACTION_CANCELED
+  );
+  ShowExtensionUninstallAndroidDialogImpl(std::move(accept_callback), std::move(cancel_callback), extension.get());
 #else
   icon_ = ChromeAppIconService::Get(profile_)->CreateIcon(this, extension->id(),
                                                           kIconSize);
@@ -299,7 +304,7 @@ bool ExtensionUninstallDialog::Uninstall(std::u16string* error) {
 }
 
 void ExtensionUninstallDialog::HandleReportAbuse() {
-#if BUILDFLAG(ENABLE_EXTENSIONS)
+#if BUILDFLAG(ENABLE_EXTENSIONS_CORE)
   DCHECK(profile_);
   NavigateParams params(
       profile_,

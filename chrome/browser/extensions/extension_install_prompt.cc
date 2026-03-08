@@ -53,7 +53,6 @@ static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 #if BUILDFLAG(IS_ANDROID)
  #include "ui/android/view_android.h"
 // #include "ui/android/window_android.h"
-
 #include "chrome/browser/download/android/extension_install_dialog_bridge.h"
 #endif
 
@@ -467,7 +466,11 @@ ExtensionInstallPrompt::ExtensionInstallPrompt(content::WebContents* contents)
       extension_(nullptr),
       install_ui_(ExtensionInstallUI::Create(profile_)),
       show_params_(new ExtensionInstallPromptShowParams(contents)),
-      did_call_show_dialog_(false) {}
+      did_call_show_dialog_(false)
+#if BUILDFLAG(IS_ANDROID)
+      , extension_install_dialog_bridge_(std::make_unique<ExtensionInstallDialogBridge>())
+#endif
+  {}
 
 ExtensionInstallPrompt::ExtensionInstallPrompt(Profile* profile,
                                                gfx::NativeWindow native_window)
@@ -617,7 +620,7 @@ void ExtensionInstallPrompt::LoadImageIfNeeded() {
 }
 
 #if BUILDFLAG(IS_ANDROID)
-void ShowExtensionInstallAndroidDialogImpl(
+void ExtensionInstallPrompt::ShowExtensionInstallAndroidDialogImpl(
     std::unique_ptr<ExtensionInstallPromptShowParams> show_params,
     ExtensionInstallPrompt::DoneCallback done_callback,
     std::unique_ptr<ExtensionInstallPrompt::Prompt> prompt) {
@@ -637,10 +640,7 @@ void ShowExtensionInstallAndroidDialogImpl(
         web_contents ? web_contents->GetNativeView() : nullptr;
     ui::WindowAndroid* window_android =
         view_android ? view_android->GetWindowAndroid() : nullptr;
-    std::unique_ptr<ExtensionInstallDialogBridge> extension_install_bridge =
-        std::make_unique<ExtensionInstallDialogBridge>();
-    extension_install_bridge->Show(std::move(prompt), window_android, std::move(accepted), std::move(canceled));
-    extension_install_bridge.release();
+    extension_install_dialog_bridge_->Show(std::move(prompt), window_android, std::move(accepted), std::move(canceled));
   }
 }
 #endif
@@ -679,7 +679,7 @@ void ExtensionInstallPrompt::ShowConfirmation() {
     return;
 
 #if BUILDFLAG(IS_ANDROID)
-  show_dialog_callback_ = base::BindRepeating(&ShowExtensionInstallAndroidDialogImpl);
+  show_dialog_callback_ = base::BindRepeating(&ExtensionInstallPrompt::ShowExtensionInstallAndroidDialogImpl, weak_factory_.GetWeakPtr());
 #else
   if (show_dialog_callback_.is_null())
     show_dialog_callback_ = GetDefaultShowDialogCallback();

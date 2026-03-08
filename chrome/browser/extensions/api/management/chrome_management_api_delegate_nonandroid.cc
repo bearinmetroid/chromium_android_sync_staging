@@ -356,7 +356,7 @@ void ChromeManagementAPIDelegate::InstallOrLaunchReplacementWebApp(
 
   // Launch the app if web_app_url happens to match start_url. If not, the app
   // could still be installed with different start_url.
-  // webapps::AppId app_id = web_app::GenerateAppIdFromManifestId(web_app_url);
+  webapps::AppId app_id = web_app::GenerateAppIdFromManifestId(web_app_url);
   if (provider->registrar_unsafe().IsInstallState(
           app_id, {web_app::proto::INSTALLED_WITHOUT_OS_INTEGRATION,
                    web_app::proto::INSTALLED_WITH_OS_INTEGRATION})) {

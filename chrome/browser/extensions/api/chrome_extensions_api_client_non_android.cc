@@ -24,7 +24,7 @@ namespace extensions {
 std::unique_ptr<UsbDevicePermissionsPrompt>
 ChromeExtensionsAPIClient::CreateUsbDevicePermissionsPrompt(
     content::WebContents* web_contents) const {
-  return std::make_unique<ChromeUsbDevicePermissionsPrompt>(web_contents);
+  return nullptr; // std::make_unique<ChromeUsbDevicePermissionsPrompt>(web_contents);
 }
 
 std::vector<KeyedServiceBaseFactory*>

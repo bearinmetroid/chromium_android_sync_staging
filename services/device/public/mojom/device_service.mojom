@@ -20,7 +20,7 @@ import "services/device/public/mojom/usb_manager_test.mojom";
 import "services/device/public/mojom/vibration_manager.mojom";
 import "services/device/public/mojom/wake_lock_provider.mojom";
 
-// [EnableIfNot=is_android]
+[EnableIfNot=is_android]
 import "services/device/public/mojom/hid.mojom";
 
 [EnableIf=enable_input_device_manager]
@@ -70,7 +70,7 @@ interface DeviceService {
                        pending_remote<VibrationManagerListener> listener);
 
   // Binds a HidManager endpoint.
-  // [EnableIfNot=is_android]
+  [EnableIfNot=is_android]
   BindHidManager(pending_receiver<HidManager> receiver);
 
   // Binds a MtpManager endpoint.

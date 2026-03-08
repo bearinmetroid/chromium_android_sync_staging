@@ -68,11 +68,17 @@ void ExtensionUninstallDialogBridge::Show(const extensions::Extension* extension
 }
 
 void ExtensionUninstallDialogBridge::Accepted(JNIEnv* env) {
-  std::move(accepted_).Run();
+  canceled_.Reset();
+  if(!accepted_.is_null()) {
+    std::move(accepted_).Run();
+  }
 }
 
 void ExtensionUninstallDialogBridge::Cancelled(JNIEnv* env) {
-  std::move(canceled_).Run();
+  accepted_.Reset();
+  if(!canceled_.is_null()) {
+    std::move(canceled_).Run();
+  }
 }
 
 DEFINE_JNI(ExtensionUninstallDialogBridge)

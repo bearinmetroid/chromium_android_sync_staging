@@ -12,7 +12,6 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/memory/raw_ptr.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
-// #include "ui/gfx/native_widget_types.h"
 
 // Class for showing dialogs to asks whether user wants to uninstall an extension
 class ExtensionUninstallDialogBridge {
