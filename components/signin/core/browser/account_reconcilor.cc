@@ -193,10 +193,13 @@ void AccountReconcilor::Initialize(bool start_reconcile_if_tokens_available) {
 }
 
 void AccountReconcilor::EnableReconcile() {
+  LOG(WARNING) << "AccountReconcilor::EnableReconcile called";
   RegisterWithAllDependencies();
   if (IsIdentityManagerReady()) {
+    LOG(WARNING) << "AccountReconcilor: IdentityManager ready, calling StartReconcile with kEnableReconcile";
     StartReconcile(Trigger::kEnableReconcile);
   } else {
+    LOG(WARNING) << "AccountReconcilor: IdentityManager NOT ready, scheduling";
     SetState(AccountReconcilorState::kScheduled);
   }
 }
@@ -444,9 +447,17 @@ void AccountReconcilor::StartReconcile(Trigger trigger) {
     return;
   }
 
-  // In the case of a forced reconciliation, we will not rely on ListAccounts,
-  // and consider the cookie jar to be empty.
-  if (trigger_ == Trigger::kForcedReconcile) {
+  // In the case of a forced reconciliation or when enabling reconcile (sign-in),
+  // we will not rely on ListAccounts, and consider the cookie jar to be empty.
+  // PATCH: Also include kEnableReconcile to fix re-sign-in with microG.
+  // Without this, cached ListAccounts data would make the reconciler think
+  // cookies are already set, skipping the Multilogin call needed for
+  // google.com/youtube.com sign-in.
+  LOG(WARNING) << "AccountReconcilor::StartReconcile: trigger=" << static_cast<int>(trigger_)
+               << " (0=kUnknown, 1=kTokenChange, 2=kCookieChange, 3=kEnableReconcile, 4=kForcedReconcile)";
+  if (trigger_ == Trigger::kForcedReconcile ||
+      trigger_ == Trigger::kEnableReconcile) {
+    LOG(WARNING) << "AccountReconcilor: Treating cookie jar as EMPTY (forced/enable reconcile)";
     OnAccountsInCookieUpdated(
         /*accounts_in_cookie_jar_info=*/signin::AccountsInCookieJarInfo(
             /*accounts_are_fresh=*/true,
@@ -474,6 +485,10 @@ void AccountReconcilor::FinishReconcileWithMultiloginEndpoint(
   DCHECK(!set_accounts_in_progress_);
   DCHECK(!log_out_in_progress_);
   DCHECK_EQ(AccountReconcilorState::kRunning, state_);
+  LOG(WARNING) << "AccountReconcilor::FinishReconcileWithMultiloginEndpoint:"
+               << " primary=" << primary_account.ToString()
+               << " chrome_accounts=" << chrome_accounts.size()
+               << " gaia_accounts=" << gaia_accounts.size();
 
   const signin::MultiloginParameters kLogoutParameters(
       gaia::MultiloginMode::MULTILOGIN_UPDATE_COOKIE_ACCOUNTS_ORDER,
@@ -496,17 +511,22 @@ void AccountReconcilor::FinishReconcileWithMultiloginEndpoint(
         chrome_accounts, primary_account, gaia_accounts, first_execution_,
         primary_has_error);
   }
-  if (CookieNeedsUpdate(parameters_for_multilogin, gaia_accounts)) {
+  bool needs_update = CookieNeedsUpdate(parameters_for_multilogin, gaia_accounts);
+  LOG(WARNING) << "AccountReconcilor: CookieNeedsUpdate=" << needs_update
+               << " accounts_to_send=" << parameters_for_multilogin.accounts_to_send.size();
+  if (needs_update) {
     // Verify the account reconcilor is not trapped into a loop of repeating the
     // same request with the same params.
     if (throttler_.TryMultiloginOperation(parameters_for_multilogin)) {
       if (parameters_for_multilogin == kLogoutParameters) {
+        LOG(WARNING) << "AccountReconcilor: Calling PerformLogoutAllAccountsAction";
         RecordReconcileOperation(trigger_, Operation::kLogout);
         // UPDATE mode does not support empty list of accounts, call logout
         // instead.
         log_out_in_progress_ = true;
         PerformLogoutAllAccountsAction();
       } else {
+        LOG(WARNING) << "AccountReconcilor: Calling PerformSetCookiesAction (Multilogin)";
         // Reconcilor has to do some calls to gaia. is_reconcile_started_ is
         // true and any StartReconcile() calls that are made in the meantime
         // will be aborted until OnSetAccountsInCookieCompleted is called and
@@ -526,6 +546,7 @@ void AccountReconcilor::FinishReconcileWithMultiloginEndpoint(
     }
   } else {
     // Nothing to do, accounts already match.
+    LOG(WARNING) << "AccountReconcilor: CookieNeedsUpdate=false, SKIPPING Multilogin (accounts already match)";
     RecordReconcileOperation(trigger_, Operation::kNoop);
     throttler_.Reset();
     error_during_last_reconcile_ = GoogleServiceAuthError::AuthErrorNone();
