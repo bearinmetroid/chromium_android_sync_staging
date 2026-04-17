@@ -39,6 +39,7 @@ android_library("java") {
     "java/src/org/chromium/components/signin/AccountManagerFacade.java",
     "java/src/org/chromium/components/signin/AccountManagerFacadeImpl.java",
     "java/src/org/chromium/components/signin/AccountManagerFacadeProvider.java",
+    "java/src/org/chromium/components/signin/MicroGAccountManagerDelegate.java",
     "java/src/org/chromium/components/signin/AccountReauthenticationUtils.java",
     "java/src/org/chromium/components/signin/AccountRestrictionPatternReceiver.java",
     "java/src/org/chromium/components/signin/AccountUtils.java",
