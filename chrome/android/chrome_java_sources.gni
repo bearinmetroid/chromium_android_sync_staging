@@ -1108,6 +1108,7 @@ chrome_java_sources = [
   "java/src/org/chromium/chrome/browser/supervised_user/ChildAccountService.java",
   "java/src/org/chromium/chrome/browser/survey/ChromeSurveyController.java",
   "java/src/org/chromium/chrome/browser/sync/SyncErrorNotifier.java",
+  "java/src/org/chromium/chrome/browser/sync/MicroGTrustedVaultBackend.java",
   "java/src/org/chromium/chrome/browser/sync/TrustedVaultClient.java",
   "java/src/org/chromium/chrome/browser/sync/settings/AccountManagementFragment.java",
   "java/src/org/chromium/chrome/browser/sync/settings/BatchUploadCardPreference.java",

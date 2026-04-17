@@ -106,7 +106,16 @@ void ExtensionBrowserWindowHelper::CleanUpTabsOnUnload(
   }
   // Iterate backwards as we may remove items while iterating.
   for (int i = tab_list->GetTabCount() - 1; i >= 0; --i) {
-    content::WebContents* web_contents = tab_list->GetTab(i)->GetContents();
+    auto* tab = tab_list->GetTab(i);
+    // PATCH: Guard against null tab or null WebContents during extension unload.
+    // On Android with synced tabs, tabs may exist without fully initialized contents.
+    if (!tab) {
+      continue;
+    }
+    content::WebContents* web_contents = tab->GetContents();
+    if (!web_contents || web_contents->IsBeingDestroyed()) {
+      continue;
+    }
     if (ShouldCloseTabOnExtensionUnload(extension, web_contents)) {
       // Do not close the last tab if it belongs to the extension. Instead
       // replace it with the default NTP.

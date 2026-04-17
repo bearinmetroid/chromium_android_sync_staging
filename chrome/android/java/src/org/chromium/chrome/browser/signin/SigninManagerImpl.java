@@ -191,6 +191,14 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
                     accounts, CoreAccountInfo.getIdFrom(primaryAccountInfo));
             return;
         }
+        // PATCH: For microG accounts, Gaia ID from stored account may differ from device accounts.
+        // Fall back to email matching to prevent sign-out when using fake/mismatched Gaia IDs.
+        if (AccountUtils.findAccountByEmail(accounts, primaryAccountInfo.getEmail()) != null) {
+            Log.i(TAG, "Primary account Gaia ID mismatch, but email found - keeping signed in (microG workaround)");
+            seedThenReloadAllAccountsFromSystem(
+                    accounts, CoreAccountInfo.getIdFrom(primaryAccountInfo));
+            return;
+        }
         if (isOperationInProgress()) {
             // Re-check whether there's still a primary account after the current operation.
             runAfterOperationInProgress(this::onCoreAccountInfosChanged);
