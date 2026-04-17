@@ -18,7 +18,6 @@ import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -46,8 +45,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-
-import org.json.JSONObject;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * microG-compatible implementation of {@link AccountManagerDelegate}.
@@ -87,24 +85,17 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
     private static final long ACCOUNT_CHANGE_DEBOUNCE_MS = 2000;
     private long mLastAccountChangeTime = 0;
 
-    // Fix for random sign-out: Suppress broadcasts during Gaia ID extraction
-    // When extracting real Gaia ID from API, don't process broadcasts until done
-    private static final long GAIA_EXTRACTION_GRACE_PERIOD_MS = 5000;
-    private volatile long mGaiaExtractionStartTime = 0;
-    private volatile boolean mGaiaExtractionInProgress = false;
-
     // Fix for random sign-out: Retry count for ContentProvider
     private static final int CONTENT_PROVIDER_MAX_RETRIES = 3;
     private static final long CONTENT_PROVIDER_RETRY_DELAY_MS = 100;
 
-    // Fix for random sign-out: Persist Gaia IDs to prevent mismatch on app restart
-    private static final String GAIA_ID_PREFS_NAME = "microg_gaia_ids";
-    private static final String GAIA_ID_PREFIX = "gaia_id_";
+    // Cache for real Gaia IDs fetched from Google's userinfo API
+    private static final ConcurrentHashMap<String, String> sRealGaiaIdCache = new ConcurrentHashMap<>();
 
     public MicroGAccountManagerDelegate() {
         mAccountManager = AccountManager.get(ContextUtils.getApplicationContext());
         mAccountType = detectAccountType();
-        Log.i(TAG, "MicroGAccountManagerDelegate initialized, account type: %s", mAccountType);
+        Log.w(TAG, "MicroGAccountManagerDelegate initialized, account type: %s", mAccountType);
     }
 
     private String detectAccountType() {
@@ -112,10 +103,10 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
             ContextUtils.getApplicationContext()
                     .getPackageManager()
                     .getPackageInfo(REVANCED_GMS_PACKAGE, 0);
-            Log.i(TAG, "ReVanced microG detected, using account type: %s", REVANCED_ACCOUNT_TYPE);
+            Log.w(TAG, "ReVanced microG detected, using account type: %s", REVANCED_ACCOUNT_TYPE);
             return REVANCED_ACCOUNT_TYPE;
         } catch (PackageManager.NameNotFoundException e) {
-            Log.i(TAG, "ReVanced microG not found, falling back to standard account type");
+            Log.w(TAG, "ReVanced microG not found, falling back to standard account type");
             return GOOGLE_ACCOUNT_TYPE;
         }
     }
@@ -134,26 +125,13 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
                         // service restart, or account operations. Without debouncing, each
                         // broadcast triggers account re-enumeration which may fail and cause sign-out.
                         long now = android.os.SystemClock.uptimeMillis();
-
-                        // Fix for random sign-out: Don't process broadcasts during Gaia ID extraction
-                        // When we're extracting the real Gaia ID from Google's API (after OAuthLogin
-                        // token is obtained), processing broadcasts can cause Chrome to call
-                        // getAccountGaiaId() before extraction completes, returning a fake ID
-                        // that triggers sign-out.
-                        if (mGaiaExtractionInProgress &&
-                            (now - mGaiaExtractionStartTime < GAIA_EXTRACTION_GRACE_PERIOD_MS)) {
-                            Log.i(TAG, "Ignoring account change broadcast (Gaia extraction in progress, %dms elapsed)",
-                                    now - mGaiaExtractionStartTime);
-                            return;
-                        }
-
                         if (now - mLastAccountChangeTime < ACCOUNT_CHANGE_DEBOUNCE_MS) {
                             Log.d(TAG, "Ignoring account change broadcast (debounced, %dms since last)",
                                     now - mLastAccountChangeTime);
                             return;
                         }
                         mLastAccountChangeTime = now;
-                        Log.i(TAG, "Processing account change broadcast");
+                        Log.w(TAG, "Processing account change broadcast");
                         assumeNonNull(mObserver).onCoreAccountInfosChanged();
                     }
                 };
@@ -171,17 +149,17 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
         if (REVANCED_ACCOUNT_TYPE.equals(mAccountType)) {
             Account[] accounts = getAccountsViaContentProvider();
             if (accounts.length > 0) {
-                Log.i(TAG, "ContentProvider returned %d accounts", accounts.length);
+                Log.w(TAG, "ContentProvider returned %d accounts", accounts.length);
                 return accounts;
             }
             // ContentProvider call might have set visibility - try AccountManager now
-            Log.i(TAG, "ContentProvider returned 0 accounts, trying AccountManager");
+            Log.w(TAG, "ContentProvider returned 0 accounts, trying AccountManager");
         }
 
         // Try AccountManager directly (no permission gate — let it fail naturally)
         try {
             Account[] accounts = mAccountManager.getAccountsByType(mAccountType);
-            Log.i(TAG, "AccountManager returned %d accounts of type '%s'",
+            Log.w(TAG, "AccountManager returned %d accounts of type '%s'",
                     accounts.length, mAccountType);
             if (accounts.length > 0) {
                 return accounts;
@@ -194,7 +172,7 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
         // On Android 8+, AccountManager won't show accounts from other authenticators
         // unless visibility is explicitly granted.
         if (REVANCED_ACCOUNT_TYPE.equals(mAccountType)) {
-            Log.i(TAG, "Trying fallback account enumeration for ReVanced microG");
+            Log.w(TAG, "Trying fallback account enumeration for ReVanced microG");
             Account[] accounts = getAccountsAllFallback();
             if (accounts.length > 0) {
                 return accounts;
@@ -231,14 +209,14 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
                         for (int i = 0; i < parcelables.length; i++) {
                             accounts[i] = (Account) parcelables[i];
                         }
-                        Log.i(TAG, "GmsCore ContentProvider returned %d accounts (attempt %d)",
+                        Log.w(TAG, "GmsCore ContentProvider returned %d accounts (attempt %d)",
                                 accounts.length, retry + 1);
                         return accounts;
                     }
                 }
                 // Result was empty or null, might be transient - retry
                 if (retry < CONTENT_PROVIDER_MAX_RETRIES - 1) {
-                    Log.i(TAG, "ContentProvider returned empty, retrying (attempt %d/%d)",
+                    Log.w(TAG, "ContentProvider returned empty, retrying (attempt %d/%d)",
                             retry + 1, CONTENT_PROVIDER_MAX_RETRIES);
                     try {
                         // Exponential backoff: 100ms, 200ms, 400ms
@@ -261,7 +239,7 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
                 }
             }
         }
-        Log.i(TAG, "GmsCore ContentProvider returned no accounts after %d attempts",
+        Log.w(TAG, "GmsCore ContentProvider returned no accounts after %d attempts",
                 CONTENT_PROVIDER_MAX_RETRIES);
         return new Account[] {};
     }
@@ -286,7 +264,7 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
                         filtered[idx++] = a;
                     }
                 }
-                Log.i(TAG, "Fallback found %d accounts of type '%s'", count, mAccountType);
+                Log.w(TAG, "Fallback found %d accounts of type '%s'", count, mAccountType);
                 return filtered;
             }
         } catch (SecurityException e) {
@@ -300,15 +278,7 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
             throws AuthException {
         ThreadUtils.assertOnBackgroundThread();
 
-        // Log OAuthLogin scope specifically - this is required for web sign-in
-        boolean isOAuthLoginScope = authTokenScope.contains("OAuthLogin") ||
-                                     authTokenScope.contains("accounts.google.com");
-        if (isOAuthLoginScope) {
-            Log.i(TAG, "*** OAuthLogin scope requested! This is for web sign-in (cookies). Scope: %s",
-                    authTokenScope);
-        }
-
-        Log.i(TAG, "Requesting token for scope '%s' account '%s' via GoogleAuthUtil (patched to microG)",
+        Log.w(TAG, "Requesting token for scope '%s' account '%s' via GoogleAuthUtil (patched to microG)",
                 authTokenScope, account.name);
 
         // GoogleAuthUtil has been Smali-patched to bind to app.revanced.android.gms
@@ -318,25 +288,22 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
                     ContextUtils.getApplicationContext(), account, authTokenScope, null);
 
             if (token != null) {
-                if (isOAuthLoginScope) {
-                    Log.i(TAG, "*** OAuthLogin token SUCCESS! Web sign-in should work now.");
-                    // CRITICAL: Extract and cache the real Gaia ID SYNCHRONOUSLY before returning.
-                    // Multilogin will call getAccountGaiaId() immediately after this returns,
-                    // so we must have the real Gaia ID cached or it will get a fake ID and fail.
-                    extractAndCacheRealGaiaIdSync(account.name, token);
+                Log.w(TAG, "Successfully obtained access token via GoogleAuthUtil (microG)");
+
+                // Fetch and cache the real Gaia ID if not already cached
+                if (!sRealGaiaIdCache.containsKey(account.name)) {
+                    fetchAndCacheRealGaiaId(account.name, token);
                 }
-                Log.i(TAG, "Successfully obtained access token via GoogleAuthUtil (microG)");
+
                 return new AccessTokenData(token);
             }
         } catch (GoogleAuthException ex) {
             Log.w(TAG, "GoogleAuthException for scope '%s': %s", authTokenScope, ex.getMessage());
-            // Use SERVICE_UNAVAILABLE (transient) instead of INVALID_GAIA_CREDENTIALS (persistent)
-            // to prevent the AccountReconcilor from aborting cookie reconciliation
             throw new AuthException(
                     "Error while getting token for scope '" + authTokenScope + "'",
                     ex,
                     new GoogleServiceAuthError(
-                            GoogleServiceAuthErrorState.SERVICE_UNAVAILABLE));
+                            GoogleServiceAuthErrorState.INVALID_GAIA_CREDENTIALS));
         } catch (IOException ex) {
             Log.w(TAG, "IOException for scope '%s': %s", authTokenScope, ex.getMessage());
             throw new AuthException(
@@ -349,7 +316,69 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
                 "Null token returned for scope '" + authTokenScope + "'",
                 new RuntimeException("Null token"),
                 new GoogleServiceAuthError(
-                        GoogleServiceAuthErrorState.SERVICE_UNAVAILABLE));
+                        GoogleServiceAuthErrorState.INVALID_GAIA_CREDENTIALS));
+    }
+
+    /**
+     * Fetch the real Gaia ID from Google's userinfo API and cache it.
+     * This is called on a background thread after successfully obtaining an OAuth token.
+     */
+    private void fetchAndCacheRealGaiaId(String email, String accessToken) {
+        try {
+            URL url = new URL("https://www.googleapis.com/oauth2/v3/userinfo");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setRequestProperty("Authorization", "Bearer " + accessToken);
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+
+            int responseCode = conn.getResponseCode();
+            if (responseCode == 200) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                StringBuilder response = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    response.append(line);
+                }
+                reader.close();
+
+                // Parse JSON to extract "sub" field (the real Gaia ID)
+                String json = response.toString();
+                String realGaiaId = extractSubFromJson(json);
+                if (realGaiaId != null && !realGaiaId.isEmpty()) {
+                    sRealGaiaIdCache.put(email, realGaiaId);
+                    Log.w(TAG, "Cached real Gaia ID for %s: %s", email, realGaiaId);
+                } else {
+                    Log.w(TAG, "Failed to extract Gaia ID from userinfo response");
+                }
+            } else {
+                Log.w(TAG, "Userinfo request failed with code %d", responseCode);
+            }
+            conn.disconnect();
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to fetch real Gaia ID: %s", e.getMessage());
+        }
+    }
+
+    /**
+     * Simple JSON parser to extract the "sub" field value.
+     * Format: {"sub":"123456789012345678901",...}
+     */
+    private String extractSubFromJson(String json) {
+        // Look for "sub":"<value>"
+        int subIndex = json.indexOf("\"sub\"");
+        if (subIndex < 0) return null;
+
+        int colonIndex = json.indexOf(':', subIndex);
+        if (colonIndex < 0) return null;
+
+        int startQuote = json.indexOf('"', colonIndex);
+        if (startQuote < 0) return null;
+
+        int endQuote = json.indexOf('"', startQuote + 1);
+        if (endQuote < 0) return null;
+
+        return json.substring(startQuote + 1, endQuote);
     }
 
     @Override
@@ -436,27 +465,32 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
 
     @Override
     public @Nullable GaiaId getAccountGaiaId(String accountEmail) {
-        // Log stack trace to see WHO is calling this and WHEN
-        Log.i(TAG, "*** getAccountGaiaId called for %s - stack trace:", accountEmail);
-        for (StackTraceElement ste : Thread.currentThread().getStackTrace()) {
-            if (ste.getClassName().contains("chromium") || ste.getClassName().contains("signin")) {
-                Log.i(TAG, "    at %s.%s(%s:%d)",
-                    ste.getClassName(), ste.getMethodName(), ste.getFileName(), ste.getLineNumber());
-            }
+        Log.w(TAG, "*** getAccountGaiaId called for %s", accountEmail);
+
+        // First, check if we have a cached real Gaia ID (fetched from userinfo API)
+        String cachedRealId = sRealGaiaIdCache.get(accountEmail);
+        if (cachedRealId != null) {
+            Log.w(TAG, "*** getAccountGaiaId: returning CACHED real gaia_id for %s: %s",
+                    accountEmail, cachedRealId);
+            return new GaiaId(cachedRealId);
         }
 
-        // For ReVanced microG accounts, we can't call getUserData() due to
-        // SecurityException (only the authenticator can read user data).
+        Log.w(TAG, "*** getAccountGaiaId: no cache for %s, will fetch real ID", accountEmail);
+
+        // For ReVanced microG accounts, try to fetch the real Gaia ID synchronously
         if (REVANCED_ACCOUNT_TYPE.equals(mAccountType)) {
-            String realGaiaId = fetchRealGaiaId(accountEmail);
-            if (realGaiaId != null) {
-                Log.i(TAG, "getAccountGaiaId: returning real gaia_id for ReVanced account %s",
-                        accountEmail);
+            // Try to fetch real Gaia ID from userinfo API
+            String realGaiaId = fetchRealGaiaIdSync(accountEmail);
+            if (realGaiaId != null && !realGaiaId.isEmpty()) {
+                sRealGaiaIdCache.put(accountEmail, realGaiaId);
+                Log.w(TAG, "*** getAccountGaiaId: fetched and cached REAL gaia_id for %s: %s",
+                        accountEmail, realGaiaId);
                 return new GaiaId(realGaiaId);
             }
-            // Fallback to fake ID - at least sign-in works
+
+            // Fallback to fake ID if real fetch fails
             String fakeGaiaId = generateFakeGaiaId(accountEmail);
-            Log.i(TAG, "getAccountGaiaId: using fake gaia_id for ReVanced account %s: %s",
+            Log.w(TAG, "*** getAccountGaiaId: returning FAKE gaia_id for %s (fetch failed): %s",
                     accountEmail, fakeGaiaId);
             return new GaiaId(fakeGaiaId);
         }
@@ -480,116 +514,203 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
     }
 
     /**
-     * Fetch the REAL Gaia ID from Google's userinfo API.
-     * This ensures we return the same ID that Chrome will get, preventing sign-out on restart.
+     * Fetch the real Gaia ID synchronously.
      *
-     * The flow is:
-     * 1. Check SharedPreferences for cached Gaia ID
-     * 2. If not cached, get an access token for userinfo scope via microG
-     * 3. Call Google's userinfo API with the token
-     * 4. Extract the Gaia ID from the response
-     * 5. Cache it in SharedPreferences
+     * Strategy: Use OAuthLogin token and call the tokeninfo endpoint to get the Gaia ID.
+     *
+     * IMPORTANT: GoogleAuthUtil requires accounts with type "com.google", not "app.revanced".
+     * Even though we're using ReVanced microG (which uses app.revanced internally), the
+     * GoogleAuthUtil API expects the standard Google account type. The Smali patches redirect
+     * the RPC to app.revanced.android.gms, but the account type check is done locally.
+     *
+     * This is called from getAccountGaiaId when we don't have a cached ID.
      */
-    private @Nullable String fetchRealGaiaId(String email) {
-        SharedPreferences prefs = ContextUtils.getApplicationContext()
-                .getSharedPreferences(GAIA_ID_PREFS_NAME, Context.MODE_PRIVATE);
-
-        // First, check for REAL Gaia ID captured previously
-        String realKey = REAL_GAIA_ID_PREFIX + email;
-        String realGaiaId = prefs.getString(realKey, null);
-        if (realGaiaId != null && !realGaiaId.isEmpty()) {
-            Log.i(TAG, "*** Using CAPTURED real gaia_id for %s: %s", email, realGaiaId);
-            return realGaiaId;
-        }
-
-        // Try to get Gaia ID from microG's ContentProvider
-        String gaiaIdFromMicroG = getGaiaIdFromMicroGContentProvider(email);
-        if (gaiaIdFromMicroG != null) {
-            // Cache it for future use
-            prefs.edit()
-                .putString(realKey, gaiaIdFromMicroG)
-                .putString(GAIA_ID_PREFIX + email, gaiaIdFromMicroG)
-                .apply();
-            Log.i(TAG, "*** Got Gaia ID from microG ContentProvider for %s: %s", email, gaiaIdFromMicroG);
-            return gaiaIdFromMicroG;
-        }
-
-        // Check legacy cache key
-        String prefsKey = GAIA_ID_PREFIX + email;
-        String cachedGaiaId = prefs.getString(prefsKey, null);
-
-        // Only use cached ID if it looks like a REAL Gaia ID (21 digits or less - Google IDs vary)
-        if (cachedGaiaId != null && cachedGaiaId.length() <= 21 && cachedGaiaId.length() >= 10) {
-            Log.i(TAG, "Using cached real gaia_id for %s: %s", email, cachedGaiaId);
-            return cachedGaiaId;
-        } else if (cachedGaiaId != null) {
-            // Clear invalid cached ID (likely a fake one with wrong length)
-            Log.w(TAG, "Clearing invalid cached gaia_id for %s (length=%d)",
-                    email, cachedGaiaId.length());
-            prefs.edit().remove(prefsKey).apply();
-        }
-
-        // Need to fetch from Google's API
-        Log.i(TAG, "Fetching real Gaia ID from Google API for %s", email);
+    private String fetchRealGaiaIdSync(String accountEmail) {
+        Log.w(TAG, "*** fetchRealGaiaIdSync: starting for %s", accountEmail);
 
         try {
-            // Get access token for userinfo scope
-            Account account = new Account(email, mAccountType);
-            String scope = "oauth2:https://www.googleapis.com/auth/userinfo.profile";
-            String token = GoogleAuthUtil.getTokenWithNotification(
-                    ContextUtils.getApplicationContext(), account, scope, null);
+            // CRITICAL: Use "com.google" account type, not "app.revanced"!
+            // GoogleAuthUtil checks account type locally before making the RPC call.
+            // It only accepts "com.google" accounts, even though the actual RPC goes
+            // to ReVanced microG via Smali patches.
+            Account account = new Account(accountEmail, GOOGLE_ACCOUNT_TYPE);
+            Log.w(TAG, "fetchRealGaiaIdSync: created account with type '%s' for %s",
+                    GOOGLE_ACCOUNT_TYPE, accountEmail);
 
-            if (token == null) {
-                Log.w(TAG, "Failed to get userinfo token for %s", email);
-                return null;
+            // Strategy 1: Get OAuthLogin token and use tokeninfo endpoint
+            // The OAuthLogin scope works with microG, and tokeninfo returns user_id (Gaia ID)
+            String token = null;
+            try {
+                token = GoogleAuthUtil.getTokenWithNotification(
+                        ContextUtils.getApplicationContext(),
+                        account,
+                        "oauth2:https://www.google.com/accounts/OAuthLogin",
+                        null);
+                Log.w(TAG, "fetchRealGaiaIdSync: got OAuthLogin token for %s", accountEmail);
+            } catch (Exception e) {
+                Log.w(TAG, "fetchRealGaiaIdSync: OAuthLogin token failed for %s: %s",
+                        accountEmail, e.getMessage());
             }
 
-            // Call Google's userinfo API
-            URL url = new URL("https://www.googleapis.com/oauth2/v1/userinfo?alt=json");
+            if (token != null) {
+                // Call tokeninfo endpoint to get user_id (which is the Gaia ID)
+                String gaiaId = getGaiaIdFromTokenInfo(token, accountEmail);
+                if (gaiaId != null) {
+                    return gaiaId;
+                }
+            }
+
+            // Strategy 2: Try email scope (more limited, but may work)
+            try {
+                token = GoogleAuthUtil.getTokenWithNotification(
+                        ContextUtils.getApplicationContext(),
+                        account,
+                        "oauth2:email",
+                        null);
+                Log.w(TAG, "fetchRealGaiaIdSync: got email token for %s", accountEmail);
+                if (token != null) {
+                    String gaiaId = getGaiaIdFromTokenInfo(token, accountEmail);
+                    if (gaiaId != null) {
+                        return gaiaId;
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "fetchRealGaiaIdSync: email token failed for %s: %s",
+                        accountEmail, e.getMessage());
+            }
+
+            // Strategy 3: Try openid scope to get ID token with sub claim
+            try {
+                token = GoogleAuthUtil.getTokenWithNotification(
+                        ContextUtils.getApplicationContext(),
+                        account,
+                        "oauth2:openid",
+                        null);
+                Log.w(TAG, "fetchRealGaiaIdSync: got openid token for %s", accountEmail);
+                if (token != null) {
+                    // If it's a JWT, decode the sub claim
+                    String gaiaId = extractSubFromJwt(token);
+                    if (gaiaId != null) {
+                        Log.w(TAG, "*** fetchRealGaiaIdSync: got Gaia ID from JWT sub for %s: %s",
+                                accountEmail, gaiaId);
+                        return gaiaId;
+                    }
+                    // Otherwise try tokeninfo
+                    gaiaId = getGaiaIdFromTokenInfo(token, accountEmail);
+                    if (gaiaId != null) {
+                        return gaiaId;
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "fetchRealGaiaIdSync: openid token failed for %s: %s",
+                        accountEmail, e.getMessage());
+            }
+
+        } catch (Exception e) {
+            Log.w(TAG, "fetchRealGaiaIdSync failed for %s: %s", accountEmail, e.getMessage());
+        }
+
+        return null;
+    }
+
+    /**
+     * Call Google's tokeninfo endpoint to get the user_id (Gaia ID) from an access token.
+     */
+    private String getGaiaIdFromTokenInfo(String accessToken, String accountEmail) {
+        try {
+            URL url = new URL("https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + accessToken);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
-            conn.setRequestProperty("Authorization", "Bearer " + token);
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(10000);
 
             int responseCode = conn.getResponseCode();
-            if (responseCode != 200) {
-                Log.w(TAG, "Userinfo API returned %d for %s", responseCode, email);
+            if (responseCode == 200) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                StringBuilder response = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    response.append(line);
+                }
+                reader.close();
                 conn.disconnect();
-                return null;
-            }
 
-            // Read response
-            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-            StringBuilder response = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                response.append(line);
-            }
-            reader.close();
-            conn.disconnect();
+                // Parse JSON to extract "sub" field (the Gaia ID in v3 API)
+                String json = response.toString();
+                Log.w(TAG, "tokeninfo response for %s: %s", accountEmail, json);
 
-            // Parse JSON response to get Gaia ID
-            JSONObject json = new JSONObject(response.toString());
-            String gaiaId = json.optString("id", null);
+                // Try "sub" first (v3 tokeninfo), then "user_id" (v1)
+                String gaiaId = extractFieldFromJson(json, "sub");
+                if (gaiaId == null) {
+                    gaiaId = extractFieldFromJson(json, "user_id");
+                }
 
-            if (gaiaId != null && !gaiaId.isEmpty()) {
-                // Cache the real Gaia ID
-                prefs.edit().putString(prefsKey, gaiaId).apply();
-                Log.i(TAG, "Fetched and cached real gaia_id for %s: %s", email, gaiaId);
-                return gaiaId;
+                if (gaiaId != null && !gaiaId.isEmpty()) {
+                    Log.w(TAG, "*** fetchRealGaiaIdSync: got real Gaia ID from tokeninfo for %s: %s",
+                            accountEmail, gaiaId);
+                    return gaiaId;
+                }
             } else {
-                Log.w(TAG, "Userinfo response missing 'id' field for %s", email);
+                Log.w(TAG, "tokeninfo API returned %d for %s", responseCode, accountEmail);
             }
-        } catch (GoogleAuthException e) {
-            Log.w(TAG, "GoogleAuthException fetching Gaia ID for %s: %s", email, e.getMessage());
-        } catch (IOException e) {
-            Log.w(TAG, "IOException fetching Gaia ID for %s: %s", email, e.getMessage());
+            conn.disconnect();
         } catch (Exception e) {
-            Log.w(TAG, "Error fetching Gaia ID for %s: %s", email, e.getMessage());
+            Log.w(TAG, "getGaiaIdFromTokenInfo failed for %s: %s", accountEmail, e.getMessage());
         }
-
         return null;
+    }
+
+    /**
+     * Extract the "sub" claim from a JWT token (ID token).
+     * JWT format: header.payload.signature, where payload is base64-encoded JSON.
+     */
+    private String extractSubFromJwt(String token) {
+        try {
+            // JWT has 3 parts separated by dots
+            String[] parts = token.split("\\.");
+            if (parts.length != 3) {
+                return null; // Not a JWT
+            }
+
+            // Decode the payload (middle part)
+            String payload = new String(android.util.Base64.decode(parts[1],
+                    android.util.Base64.URL_SAFE | android.util.Base64.NO_PADDING | android.util.Base64.NO_WRAP));
+
+            // Extract "sub" field
+            return extractFieldFromJson(payload, "sub");
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Extract the "id" field from userinfo JSON response.
+     * Format: {"id":"123456789012345678901",...}
+     */
+    private String extractIdFromJson(String json) {
+        // Try "id" first (v1 API)
+        String id = extractFieldFromJson(json, "id");
+        if (id != null) return id;
+
+        // Try "sub" (v3 API)
+        return extractFieldFromJson(json, "sub");
+    }
+
+    private String extractFieldFromJson(String json, String fieldName) {
+        String searchStr = "\"" + fieldName + "\"";
+        int fieldIndex = json.indexOf(searchStr);
+        if (fieldIndex < 0) return null;
+
+        int colonIndex = json.indexOf(':', fieldIndex);
+        if (colonIndex < 0) return null;
+
+        int startQuote = json.indexOf('"', colonIndex);
+        if (startQuote < 0) return null;
+
+        int endQuote = json.indexOf('"', startQuote + 1);
+        if (endQuote < 0) return null;
+
+        return json.substring(startQuote + 1, endQuote);
     }
 
     @Override
@@ -613,315 +734,38 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
      * Generate a fake but deterministic gaia_id based on email address.
      * This allows Chromium to proceed with account resolution without SecurityException.
      *
-     * Fix for random sign-out: Persist generated Gaia IDs to SharedPreferences.
-     * On app restart, Chromium compares the stored Gaia ID with the current one.
-     * If they don't match (e.g., due to algorithm changes between builds),
-     * Chromium signs out the user. By persisting the Gaia ID, we ensure consistency.
+     * Fix for random sign-out: Use SHA-256 instead of simple hash to prevent collisions.
+     * Hash collisions could cause Chromium to treat different accounts as the same,
+     * leading to authentication confusion and sign-out.
      */
-    private static final String FAKE_GAIA_ID_PREFIX = "fake_gaia_id_";
-    private static final String REAL_GAIA_ID_PREFIX = "real_gaia_id_";
-
-    /**
-     * Try to get the Gaia ID directly from microG's ContentProvider.
-     * microG stores account metadata including the Gaia ID.
-     */
-    private @Nullable String getGaiaIdFromMicroGContentProvider(String email) {
-        ContentResolver resolver = ContextUtils.getApplicationContext().getContentResolver();
-        Uri uri = Uri.parse("content://" + REVANCED_AUTH_AUTHORITY);
-
-        try {
-            // Try "get_account_data" method
-            Bundle extras = new Bundle();
-            extras.putString("account_name", email);
-            extras.putString("account_type", mAccountType);
-            extras.putString("key", "gaia_id");
-
-            Bundle result = resolver.call(uri, "get_account_data", mAccountType, extras);
-            if (result != null) {
-                String gaiaId = result.getString("gaia_id");
-                if (gaiaId == null) gaiaId = result.getString("value");
-                if (gaiaId == null) gaiaId = result.getString("result");
-                if (gaiaId != null && !gaiaId.isEmpty()) {
-                    Log.i(TAG, "ContentProvider get_account_data returned gaia_id: %s", gaiaId);
-                    return gaiaId;
-                }
-                // Log what we got
-                Log.i(TAG, "ContentProvider get_account_data result keys: %s", result.keySet());
-            }
-
-            // Try "getUserData" method (standard AccountManager method name)
-            extras.putString("key", "GoogleUserId");
-            result = resolver.call(uri, "getUserData", email, extras);
-            if (result != null) {
-                String gaiaId = result.getString("GoogleUserId");
-                if (gaiaId == null) gaiaId = result.getString("value");
-                if (gaiaId != null && !gaiaId.isEmpty()) {
-                    Log.i(TAG, "ContentProvider getUserData returned gaia_id: %s", gaiaId);
-                    return gaiaId;
-                }
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Error getting Gaia ID from ContentProvider for %s: %s", email, e.getMessage());
-        }
-
-        return null;
-    }
-
-    /**
-     * Extract the real Gaia ID SYNCHRONOUSLY from the OAuthLogin token.
-     *
-     * CRITICAL: This MUST be synchronous! The multilogin flow starts immediately
-     * after the token is returned, and needs the REAL Gaia ID. If we extract
-     * asynchronously, multilogin will use a fake ID and fail with kInvalidTokens.
-     *
-     * The OAuthLogin token might be a JWT containing the user ID. We try to decode it.
-     * If that fails, we call Google's userinfo API synchronously.
-     */
-    private void extractAndCacheRealGaiaIdSync(String email, String token) {
-        Log.i(TAG, "*** extractAndCacheRealGaiaIdSync: starting for %s", email);
-        String gaiaId = null;
-
-        // Method 1: Try to decode the token as JWT and extract 'sub' claim
-        // OAuthLogin tokens from Google are often JWTs with the Gaia ID in the 'sub' field
-        try {
-            String[] parts = token.split("\\.");
-            if (parts.length >= 2) {
-                // JWT payload is base64url encoded
-                String payload = parts[1];
-                // Add padding if needed
-                int padding = (4 - payload.length() % 4) % 4;
-                payload = payload + "====".substring(0, padding);
-                // Replace URL-safe chars
-                payload = payload.replace('-', '+').replace('_', '/');
-
-                byte[] decoded = android.util.Base64.decode(payload, android.util.Base64.DEFAULT);
-                String payloadJson = new String(decoded, "UTF-8");
-                JSONObject jwt = new JSONObject(payloadJson);
-
-                // Try various claim names for Gaia ID
-                gaiaId = jwt.optString("sub", null);
-                if (gaiaId == null) gaiaId = jwt.optString("id", null);
-                if (gaiaId == null) gaiaId = jwt.optString("user_id", null);
-                if (gaiaId == null) gaiaId = jwt.optString("obfuscatedGaiaId", null);
-
-                if (gaiaId != null && !gaiaId.isEmpty()) {
-                    Log.i(TAG, "*** Extracted Gaia ID from JWT: %s", gaiaId);
-                }
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "JWT decode failed for %s: %s", email, e.getMessage());
-        }
-
-        // Method 2: Call userinfo API synchronously if JWT didn't work
-        if (gaiaId == null || gaiaId.isEmpty()) {
-            Log.i(TAG, "*** JWT decode didn't yield Gaia ID, trying userinfo API...");
-            try {
-                URL url = new URL("https://www.googleapis.com/oauth2/v3/userinfo");
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("GET");
-                conn.setRequestProperty("Authorization", "Bearer " + token);
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
-
-                int responseCode = conn.getResponseCode();
-                if (responseCode == 200) {
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                    StringBuilder response = new StringBuilder();
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        response.append(line);
-                    }
-                    reader.close();
-                    conn.disconnect();
-
-                    JSONObject json = new JSONObject(response.toString());
-                    gaiaId = json.optString("sub", null);
-                    if (gaiaId == null) gaiaId = json.optString("id", null);
-                    if (gaiaId != null) {
-                        Log.i(TAG, "*** UserInfo API returned Gaia ID: %s", gaiaId);
-                    }
-                } else {
-                    Log.w(TAG, "UserInfo API returned %d for %s", responseCode, email);
-                    conn.disconnect();
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "UserInfo API error for %s: %s", email, e.getMessage());
-            }
-        }
-
-        // Cache the real Gaia ID if we got one
-        if (gaiaId != null && !gaiaId.isEmpty()) {
-            SharedPreferences prefs = ContextUtils.getApplicationContext()
-                    .getSharedPreferences(GAIA_ID_PREFS_NAME, Context.MODE_PRIVATE);
-            prefs.edit()
-                .putString(REAL_GAIA_ID_PREFIX + email, gaiaId)
-                .putString(GAIA_ID_PREFIX + email, gaiaId)
-                .apply();
-            Log.i(TAG, "*** CACHED REAL Gaia ID for %s: %s (length=%d)", email, gaiaId, gaiaId.length());
-        } else {
-            Log.w(TAG, "*** FAILED to extract real Gaia ID for %s - multilogin will likely fail!", email);
-        }
-    }
-
-    /**
-     * Extract the real Gaia ID using a successful OAuth token and cache it (ASYNC version).
-     * This is called when OAuthLogin succeeds during sign-in.
-     *
-     * Fix for random sign-out: Sets mGaiaExtractionInProgress flag to suppress
-     * account change broadcasts while extraction is in progress. This prevents
-     * Chrome from calling getAccountGaiaId() and getting a fake ID before we
-     * have the real one cached.
-     */
-    private void extractAndCacheRealGaiaId(String email, String token) {
-        // Mark extraction in progress to suppress account change broadcasts
-        mGaiaExtractionInProgress = true;
-        mGaiaExtractionStartTime = android.os.SystemClock.uptimeMillis();
-        Log.i(TAG, "*** Starting Gaia ID extraction for %s (broadcasts suppressed)", email);
-
-        // Run in background to avoid blocking
-        new Thread(() -> {
-            String gaiaId = null;
-
-            // Try method 1: Google People API (most reliable)
-            try {
-                URL url = new URL("https://people.googleapis.com/v1/people/me?personFields=metadata&access_token=" + token);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("GET");
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
-
-                int responseCode = conn.getResponseCode();
-                if (responseCode == 200) {
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                    StringBuilder response = new StringBuilder();
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        response.append(line);
-                    }
-                    reader.close();
-                    conn.disconnect();
-
-                    // Parse response - resourceName contains "people/{gaiaId}"
-                    JSONObject json = new JSONObject(response.toString());
-                    String resourceName = json.optString("resourceName", null);
-                    if (resourceName != null && resourceName.startsWith("people/")) {
-                        gaiaId = resourceName.substring(7); // Remove "people/" prefix
-                        Log.i(TAG, "*** People API returned Gaia ID for %s: %s", email, gaiaId);
-                    }
-                } else {
-                    Log.w(TAG, "People API returned %d for %s", responseCode, email);
-                    conn.disconnect();
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "People API error for %s: %s", email, e.getMessage());
-            }
-
-            // Try method 2: UserInfo endpoint with Bearer auth
-            if (gaiaId == null) {
-                try {
-                    URL url = new URL("https://www.googleapis.com/oauth2/v3/userinfo");
-                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                    conn.setRequestMethod("GET");
-                    conn.setRequestProperty("Authorization", "Bearer " + token);
-                    conn.setConnectTimeout(5000);
-                    conn.setReadTimeout(5000);
-
-                    int responseCode = conn.getResponseCode();
-                    if (responseCode == 200) {
-                        BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                        StringBuilder response = new StringBuilder();
-                        String line;
-                        while ((line = reader.readLine()) != null) {
-                            response.append(line);
-                        }
-                        reader.close();
-                        conn.disconnect();
-
-                        JSONObject json = new JSONObject(response.toString());
-                        gaiaId = json.optString("sub", null);
-                        if (gaiaId == null) gaiaId = json.optString("id", null);
-                        if (gaiaId != null) {
-                            Log.i(TAG, "*** UserInfo API returned Gaia ID for %s: %s", email, gaiaId);
-                        }
-                    } else {
-                        Log.w(TAG, "UserInfo API returned %d for %s", responseCode, email);
-                        conn.disconnect();
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "UserInfo API error for %s: %s", email, e.getMessage());
-                }
-            }
-
-            // Cache if we got a real Gaia ID
-            if (gaiaId != null && !gaiaId.isEmpty()) {
-                SharedPreferences prefs = ContextUtils.getApplicationContext()
-                        .getSharedPreferences(GAIA_ID_PREFS_NAME, Context.MODE_PRIVATE);
-                prefs.edit()
-                    .putString(REAL_GAIA_ID_PREFIX + email, gaiaId)
-                    .putString(GAIA_ID_PREFIX + email, gaiaId)
-                    .apply();
-                Log.i(TAG, "*** CAPTURED REAL Gaia ID for %s: %s (length=%d)",
-                        email, gaiaId, gaiaId.length());
-            } else {
-                Log.w(TAG, "Could not extract real Gaia ID for %s via any method", email);
-            }
-
-            // Mark extraction complete - allow broadcasts again
-            mGaiaExtractionInProgress = false;
-            Log.i(TAG, "*** Gaia ID extraction complete for %s (broadcasts enabled, took %dms)",
-                    email, android.os.SystemClock.uptimeMillis() - mGaiaExtractionStartTime);
-        }).start();
-    }
-
     private String generateFakeGaiaId(String email) {
-        // Use DIFFERENT cache key for fake IDs to distinguish from real ones
-        SharedPreferences prefs = ContextUtils.getApplicationContext()
-                .getSharedPreferences(GAIA_ID_PREFS_NAME, Context.MODE_PRIVATE);
-        String prefsKey = FAKE_GAIA_ID_PREFIX + email;
-        String existingGaiaId = prefs.getString(prefsKey, null);
-
-        // Only use cached fake ID if it's exactly 21 digits (correct format)
-        if (existingGaiaId != null && existingGaiaId.length() == 21) {
-            Log.i(TAG, "Using persisted fake gaia_id for %s: %s", email, existingGaiaId);
-            return existingGaiaId;
-        }
-
-        // Generate new Gaia ID using SHA-256 - EXACTLY 21 digits
-        String newGaiaId;
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] digest = md.digest(email.getBytes());
-            // Use first 8 bytes as a 64-bit number, then format to 21 digits
-            long value = 0;
-            for (int i = 0; i < 8 && i < digest.length; i++) {
-                value = (value << 8) | (digest[i] & 0xFF);
+            // Convert bytes to numeric string - Gaia IDs are exactly 21 digits
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < digest.length && sb.length() < 21; i++) {
+                int val = digest[i] & 0xFF;
+                if (val < 10) sb.append('0');
+                sb.append(val);
             }
-            // Ensure positive and format to exactly 21 digits
-            // Use BigInteger for the modulo operation since 10^21 exceeds long range
-            java.math.BigInteger bigValue = java.math.BigInteger.valueOf(Math.abs(value));
-            java.math.BigInteger mod = new java.math.BigInteger("1000000000000000000000"); // 10^21
-            newGaiaId = String.format("%021d", bigValue.mod(mod));
-            // Truncate to exactly 21 digits if needed
-            if (newGaiaId.length() > 21) {
-                newGaiaId = newGaiaId.substring(newGaiaId.length() - 21);
+            // Pad if too short (shouldn't happen with SHA-256)
+            while (sb.length() < 21) {
+                sb.insert(0, '0');
             }
+            // Truncate to exactly 21 digits (standard Gaia ID length)
+            if (sb.length() > 21) {
+                sb.setLength(21);
+            }
+            return sb.toString();
         } catch (NoSuchAlgorithmException e) {
+            // Fallback to simple hash if SHA-256 unavailable (shouldn't happen)
             Log.w(TAG, "SHA-256 unavailable, falling back to simple hash");
             long hash = 0;
             for (int i = 0; i < email.length(); i++) {
                 hash = 31 * hash + email.charAt(i);
             }
-            newGaiaId = String.format("%021d", Math.abs(hash) % 1000000000000000000L);
-            if (newGaiaId.length() > 21) {
-                newGaiaId = newGaiaId.substring(newGaiaId.length() - 21);
-            }
+            return String.format("%021d", Math.abs(hash) % 1000000000000000000L);
         }
-
-        // Persist the new Gaia ID for future app restarts
-        prefs.edit().putString(prefsKey, newGaiaId).apply();
-        Log.i(TAG, "Generated and persisted new fake gaia_id for %s: %s (length=%d)",
-                email, newGaiaId, newGaiaId.length());
-
-        return newGaiaId;
     }
 }

@@ -326,6 +326,9 @@ void OAuthMultiloginHelper::StartFetchingMultiLogin() {
 
 void OAuthMultiloginHelper::OnOAuthMultiloginFinished(
     const OAuthMultiloginResult& result) {
+  LOG(WARNING) << "OAuthMultiloginHelper::OnOAuthMultiloginFinished: status="
+               << static_cast<int>(result.status())
+               << " cookies=" << result.cookies().size();
   if (result.status() == OAuthMultiloginResponseStatus::kOk) {
     if (VLOG_IS_ON(1)) {
       std::vector<std::string> account_ids;
@@ -413,6 +416,8 @@ void OAuthMultiloginHelper::OnOAuthMultiloginFinished(
 
 void OAuthMultiloginHelper::StartSettingCookies(
     const OAuthMultiloginResult& result) {
+  LOG(WARNING) << "OAuthMultiloginHelper::StartSettingCookies: "
+               << result.cookies().size() << " cookies to set";
   network::mojom::CookieManager* cookie_manager =
       partition_delegate_->GetCookieManagerForPartition();
   net::CookieInclusionStatus default_cookie_inclusion_status;
@@ -425,6 +430,7 @@ void OAuthMultiloginHelper::StartSettingCookies(
       unique_cookies;
   for (const net::CanonicalCookie& cookie : result.cookies()) {
     unique_cookies.try_emplace({cookie.Name(), cookie.Domain()}, cookie);
+    LOG(WARNING) << "  Cookie: " << cookie.Name() << " domain=" << cookie.Domain();
   }
 
   base::RepeatingCallback<void(net::CookieAccessResult)> barrier_callback =
@@ -444,10 +450,19 @@ void OAuthMultiloginHelper::StartSettingCookies(
 
 void OAuthMultiloginHelper::OnCookiesSet(
     const std::vector<net::CookieAccessResult>& results) {
+  int success_count = 0;
+  int failure_count = 0;
   for (const auto& result : results) {
     base::UmaHistogramBoolean("Signin.SetCookieSuccess",
                               result.status.IsInclude());
+    if (result.status.IsInclude()) {
+      success_count++;
+    } else {
+      failure_count++;
+    }
   }
+  LOG(WARNING) << "OAuthMultiloginHelper::OnCookiesSet: total=" << results.size()
+               << " success=" << success_count << " failure=" << failure_count;
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   if (GetCookieBindingSupport() == CookieBindingSupport::kPrototype) {

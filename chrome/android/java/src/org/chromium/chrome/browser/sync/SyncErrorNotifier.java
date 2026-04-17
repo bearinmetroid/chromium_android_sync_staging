@@ -180,11 +180,15 @@ public class SyncErrorNotifier implements SyncService.SyncStateChangedListener {
             return NotificationState.REQUIRE_PASSPHRASE;
         }
 
-        if (mSyncService.isTrustedVaultKeyRequiredForPreferredDataTypes()) {
-            return mSyncService.isEncryptEverythingEnabled()
-                    ? NotificationState.REQUIRE_TRUSTED_VAULT_KEY_FOR_EVERYTHING
-                    : NotificationState.REQUIRE_TRUSTED_VAULT_KEY_FOR_PASSWORDS;
-        }
+        // PATCH: Suppress "Verify it's you" notification for microG users.
+        // microG doesn't support trusted vault encryption, so showing this notification
+        // is confusing and non-actionable. Sync still works without trusted vault keys.
+        // The native SyncService reports keys are required, but we suppress the UI.
+        // if (mSyncService.isTrustedVaultKeyRequiredForPreferredDataTypes()) {
+        //     return mSyncService.isEncryptEverythingEnabled()
+        //             ? NotificationState.REQUIRE_TRUSTED_VAULT_KEY_FOR_EVERYTHING
+        //             : NotificationState.REQUIRE_TRUSTED_VAULT_KEY_FOR_PASSWORDS;
+        // }
 
         return NotificationState.HIDDEN;
     }
