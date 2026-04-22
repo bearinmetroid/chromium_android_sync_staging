@@ -24,6 +24,10 @@ source_set("image_fetcher") {
   ]
 
   if (is_android) {
+    sources += [
+      "android_native_image_decoder.cc",
+      "android_native_image_decoder.h",
+    ]
     deps += [ "//components/image_fetcher:android" ]
   }
 }

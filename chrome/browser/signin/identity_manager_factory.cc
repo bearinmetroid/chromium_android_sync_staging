@@ -12,6 +12,9 @@
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/image_fetcher/image_decoder_impl.h"
+#if BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/image_fetcher/android_native_image_decoder.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
@@ -126,7 +129,11 @@ IdentityManagerFactory::BuildServiceInstanceForBrowserContext(
   signin::IdentityManagerBuildParams params;
   params.account_consistency =
       AccountConsistencyModeManager::GetMethodForProfile(profile),
+#if BUILDFLAG(IS_ANDROID)
+  params.image_decoder = std::make_unique<AndroidNativeImageDecoder>();
+#else
   params.image_decoder = std::make_unique<ImageDecoderImpl>();
+#endif
   params.local_state = g_browser_process->local_state();
   params.network_connection_tracker = content::GetNetworkConnectionTracker();
   params.pref_service = profile->GetPrefs();

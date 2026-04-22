@@ -162,14 +162,18 @@ public class TrustedVaultClient {
 
     /**
      * Displays a UI that allows the user to reauthenticate and retrieve the sync encryption keys.
+     *
+     * PATCH: Directly instantiate MicroGTrustedVaultBackend instead of using ServiceLoader.
+     * ServiceLoader fails to find the backend because @ServiceImpl annotation processing
+     * doesn't generate META-INF/services entries in Android builds.
+     * MicroGTrustedVaultBackend suppresses "Verify it's you" notifications by:
+     * - getIsRecoverabilityDegraded() returns false
+     * - createKeyRetrievalIntent() returns fulfilled(null) instead of rejected()
      */
     public static TrustedVaultClient get() {
         if (sInstance == null) {
-            TrustedVaultClient.Backend backend =
-                    ServiceLoaderUtil.maybeCreate(TrustedVaultClient.Backend.class);
-            if (backend == null) {
-                backend = new TrustedVaultClient.EmptyBackend();
-            }
+            // Directly use MicroGTrustedVaultBackend - ServiceLoader doesn't work on Android
+            TrustedVaultClient.Backend backend = new MicroGTrustedVaultBackend();
             sInstance = new TrustedVaultClient(backend);
         }
         return sInstance;

@@ -24,11 +24,10 @@ public class AccountManagerFacadeProvider {
         private static final AccountManagerFacade INSTANCE;
 
         static {
-            AccountManagerDelegate delegate =
-                    ServiceLoaderUtil.maybeCreate(AccountManagerDelegate.class);
-            if (delegate == null) {
-                delegate = new SystemAccountManagerDelegate();
-            }
+            // PATCH: Directly instantiate MicroGAccountManagerDelegate instead of using
+            // ServiceLoader. The @ServiceImpl annotation processing doesn't generate
+            // META-INF/services files in this build configuration, so ServiceLoader fails.
+            AccountManagerDelegate delegate = new MicroGAccountManagerDelegate();
             INSTANCE = new AccountManagerFacadeImpl(delegate);
         }
     }

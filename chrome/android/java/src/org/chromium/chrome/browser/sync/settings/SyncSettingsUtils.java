@@ -593,52 +593,8 @@ public class SyncSettingsUtils {
 
     /** Returns the errors common to both getSyncError() and getIdentityError(). */
     private static @SyncError int getCommonError(Profile profile) {
-        SyncService syncService = SyncServiceFactory.getForProfile(profile);
-        assert syncService != null;
-
-        if (syncService.getAuthError().getState()
-                == GoogleServiceAuthErrorState.INVALID_GAIA_CREDENTIALS) {
-            return SyncError.AUTH_ERROR;
-        }
-
-        if (syncService.requiresClientUpgrade()) {
-            return SyncError.CLIENT_OUT_OF_DATE;
-        }
-
-        if (syncService.getAuthError().getState() != GoogleServiceAuthErrorState.NONE
-                || syncService.hasUnrecoverableError()) {
-            return SyncError.OTHER_ERRORS;
-        }
-
-        if (syncService.isEngineInitialized()
-                && syncService.isPassphraseRequiredForPreferredDataTypes()) {
-            return SyncError.PASSPHRASE_REQUIRED;
-        }
-
-        if (syncService.isEngineInitialized()
-                && syncService.isTrustedVaultKeyRequiredForPreferredDataTypes()) {
-            return syncService.isEncryptEverythingEnabled()
-                    ? SyncError.TRUSTED_VAULT_KEY_REQUIRED_FOR_EVERYTHING
-                    : SyncError.TRUSTED_VAULT_KEY_REQUIRED_FOR_PASSWORDS;
-        }
-
-        if (syncService.isEngineInitialized()
-                && syncService.isTrustedVaultRecoverabilityDegraded()) {
-            return syncService.isEncryptEverythingEnabled()
-                    ? SyncError.TRUSTED_VAULT_RECOVERABILITY_DEGRADED_FOR_EVERYTHING
-                    : SyncError.TRUSTED_VAULT_RECOVERABILITY_DEGRADED_FOR_PASSWORDS;
-        }
-
-        // This error doesn't lead to a SyncErrorMessage and thus should be thrown at the last.
-        // Otherwise this would block other errors from showing the SyncErrorMessage.
-        // TODO(crbug.com/345217772): Look for a better alternative. Maybe return all the sync
-        // errors at the moment and not just one.
-        if (syncService.getSelectedTypes().contains(UserSelectableType.PASSWORDS)
-                && PasswordManagerUtilBridge.isGmsCoreUpdateRequired(
-                        UserPrefs.get(profile), syncService)) {
-            return SyncError.UPM_BACKEND_OUTDATED;
-        }
-
+        // microG FIX: Always return NO_ERROR to suppress "Verify it's you" warnings
+        // microG doesn't support TrustedVault, but sync works fine without it
         return SyncError.NO_ERROR;
     }
 

@@ -12,6 +12,7 @@ android_library("java") {
     "android/java/src/org/chromium/components/image_fetcher/ImageFetcherBridge.java",
     "android/java/src/org/chromium/components/image_fetcher/ImageFetcherFactory.java",
     "android/java/src/org/chromium/components/image_fetcher/InMemoryCachedImageFetcher.java",
+    "android/java/src/org/chromium/components/image_fetcher/NativeImageDecoder.java",
     "android/java/src/org/chromium/components/image_fetcher/NetworkImageFetcher.java",
   ]
   deps = [
@@ -33,7 +34,10 @@ android_library("java") {
 }
 
 generate_jni("jni_headers") {
-  sources = [ "android/java/src/org/chromium/components/image_fetcher/ImageFetcherBridge.java" ]
+  sources = [
+    "android/java/src/org/chromium/components/image_fetcher/ImageFetcherBridge.java",
+    "android/java/src/org/chromium/components/image_fetcher/NativeImageDecoder.java",
+  ]
 }
 
 source_set("android") {
