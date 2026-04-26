@@ -81,15 +81,13 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
     private final String mAccountType;
     private @Nullable AccountsChangeObserver mObserver;
 
-    // Fix for random sign-out: Debounce account change broadcasts
     private static final long ACCOUNT_CHANGE_DEBOUNCE_MS = 2000;
     private long mLastAccountChangeTime = 0;
 
-    // Fix for random sign-out: Retry count for ContentProvider
     private static final int CONTENT_PROVIDER_MAX_RETRIES = 3;
     private static final long CONTENT_PROVIDER_RETRY_DELAY_MS = 100;
 
-    // Cache for real Gaia IDs fetched from Google's userinfo API
+    // for real Gaia IDs fetched from Google's userinfo API
     private static final ConcurrentHashMap<String, String> sRealGaiaIdCache = new ConcurrentHashMap<>();
 
     public MicroGAccountManagerDelegate() {
@@ -120,10 +118,7 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
                 new BroadcastReceiver() {
                     @Override
                     public void onReceive(final Context context, final Intent intent) {
-                        // Fix for random sign-out: Debounce rapid account change broadcasts
-                        // ReVanced microG can emit multiple broadcasts during token refresh,
                         // service restart, or account operations. Without debouncing, each
-                        // broadcast triggers account re-enumeration which may fail and cause sign-out.
                         long now = android.os.SystemClock.uptimeMillis();
                         if (now - mLastAccountChangeTime < ACCOUNT_CHANGE_DEBOUNCE_MS) {
                             Log.d(TAG, "Ignoring account change broadcast (debounced, %dms since last)",
@@ -156,7 +151,7 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
             Log.w(TAG, "ContentProvider returned 0 accounts, trying AccountManager");
         }
 
-        // Try AccountManager directly (no permission gate — let it fail naturally)
+        // AccountManager directly (no permission gate — let it fail naturally)
         try {
             Account[] accounts = mAccountManager.getAccountsByType(mAccountType);
             Log.w(TAG, "AccountManager returned %d accounts of type '%s'",
@@ -465,32 +460,27 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
 
     @Override
     public @Nullable GaiaId getAccountGaiaId(String accountEmail) {
-        Log.w(TAG, "*** getAccountGaiaId called for %s", accountEmail);
 
-        // First, check if we have a cached real Gaia ID (fetched from userinfo API)
+        // check if we have a cached real Gaia ID (fetched from userinfo API)
         String cachedRealId = sRealGaiaIdCache.get(accountEmail);
         if (cachedRealId != null) {
-            Log.w(TAG, "*** getAccountGaiaId: returning CACHED real gaia_id for %s: %s",
                     accountEmail, cachedRealId);
             return new GaiaId(cachedRealId);
         }
 
-        Log.w(TAG, "*** getAccountGaiaId: no cache for %s, will fetch real ID", accountEmail);
 
         // For ReVanced microG accounts, try to fetch the real Gaia ID synchronously
         if (REVANCED_ACCOUNT_TYPE.equals(mAccountType)) {
-            // Try to fetch real Gaia ID from userinfo API
+            // to fetch real Gaia ID from userinfo API
             String realGaiaId = fetchRealGaiaIdSync(accountEmail);
             if (realGaiaId != null && !realGaiaId.isEmpty()) {
                 sRealGaiaIdCache.put(accountEmail, realGaiaId);
-                Log.w(TAG, "*** getAccountGaiaId: fetched and cached REAL gaia_id for %s: %s",
                         accountEmail, realGaiaId);
                 return new GaiaId(realGaiaId);
             }
 
             // Fallback to fake ID if real fetch fails
             String fakeGaiaId = generateFakeGaiaId(accountEmail);
-            Log.w(TAG, "*** getAccountGaiaId: returning FAKE gaia_id for %s (fetch failed): %s",
                     accountEmail, fakeGaiaId);
             return new GaiaId(fakeGaiaId);
         }
@@ -526,10 +516,8 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
      * This is called from getAccountGaiaId when we don't have a cached ID.
      */
     private String fetchRealGaiaIdSync(String accountEmail) {
-        Log.w(TAG, "*** fetchRealGaiaIdSync: starting for %s", accountEmail);
 
         try {
-            // CRITICAL: Use "com.google" account type, not "app.revanced"!
             // GoogleAuthUtil checks account type locally before making the RPC call.
             // It only accepts "com.google" accounts, even though the actual RPC goes
             // to ReVanced microG via Smali patches.
@@ -591,7 +579,6 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
                     // If it's a JWT, decode the sub claim
                     String gaiaId = extractSubFromJwt(token);
                     if (gaiaId != null) {
-                        Log.w(TAG, "*** fetchRealGaiaIdSync: got Gaia ID from JWT sub for %s: %s",
                                 accountEmail, gaiaId);
                         return gaiaId;
                     }
@@ -639,14 +626,13 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
                 String json = response.toString();
                 Log.w(TAG, "tokeninfo response for %s: %s", accountEmail, json);
 
-                // Try "sub" first (v3 tokeninfo), then "user_id" (v1)
+                // "sub" first (v3 tokeninfo), then "user_id" (v1)
                 String gaiaId = extractFieldFromJson(json, "sub");
                 if (gaiaId == null) {
                     gaiaId = extractFieldFromJson(json, "user_id");
                 }
 
                 if (gaiaId != null && !gaiaId.isEmpty()) {
-                    Log.w(TAG, "*** fetchRealGaiaIdSync: got real Gaia ID from tokeninfo for %s: %s",
                             accountEmail, gaiaId);
                     return gaiaId;
                 }
@@ -688,11 +674,11 @@ public class MicroGAccountManagerDelegate implements AccountManagerDelegate {
      * Format: {"id":"123456789012345678901",...}
      */
     private String extractIdFromJson(String json) {
-        // Try "id" first (v1 API)
+        // "id" first (v1 API)
         String id = extractFieldFromJson(json, "id");
         if (id != null) return id;
 
-        // Try "sub" (v3 API)
+        // "sub" (v3 API)
         return extractFieldFromJson(json, "sub");
     }
 
