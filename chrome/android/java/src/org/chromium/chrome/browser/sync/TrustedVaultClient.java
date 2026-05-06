@@ -16,11 +16,8 @@ import org.chromium.base.Promise;
 import org.chromium.base.ResettersForTesting;
 import org.chromium.base.ServiceLoaderUtil;
 import org.chromium.base.metrics.RecordHistogram;
-import org.chromium.build.annotations.MonotonicNonNull;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
 import org.chromium.components.signin.base.CoreAccountInfo;
-import org.chromium.components.trusted_vault.TrustedVaultUserActionTriggerForUMA;
+import org.chromium.components.sync.TrustedVaultUserActionTriggerForUMA;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -30,7 +27,6 @@ import java.util.TreeSet;
 import java.util.function.Consumer;
 
 /** Client used to communicate with GmsCore about sync encryption keys. */
-@NullMarked
 public class TrustedVaultClient {
     /** Interface to downstream functionality. */
     public interface Backend {
@@ -145,12 +141,11 @@ public class TrustedVaultClient {
         }
     }
 
-    private static @MonotonicNonNull TrustedVaultClient sInstance;
+    private static TrustedVaultClient sInstance;
 
     private Backend mBackend;
 
-    // Registered native TrustedVaultClientAndroid instances. Usually exactly one.
-    private final Set<Long> mNativeTrustedVaultClientAndroidSet = new TreeSet<>();
+    private final Set<Long> mNativeTrustedVaultClientAndroidSet = new TreeSet<Long>();
 
     @VisibleForTesting
     public TrustedVaultClient(Backend backend) {
@@ -167,6 +162,12 @@ public class TrustedVaultClient {
     /**
      * Displays a UI that allows the user to reauthenticate and retrieve the sync encryption keys.
      *
+     * PATCH: Directly instantiate MicroGTrustedVaultBackend instead of using ServiceLoader.
+     * ServiceLoader fails to find the backend because @ServiceImpl annotation processing
+     * doesn't generate META-INF/services entries in Android builds.
+     * MicroGTrustedVaultBackend suppresses "Verify it's you" notifications by:
+     * - getIsRecoverabilityDegraded() returns false
+     * - createKeyRetrievalIntent() returns fulfilled(null) instead of rejected()
      */
     public static TrustedVaultClient get() {
         if (sInstance == null) {
@@ -190,24 +191,10 @@ public class TrustedVaultClient {
     /**
      * Notifies all registered native clients (in practice, exactly one) that keys in the backend
      * may have changed, which usually leads to refetching the keys from the backend.
-     *
-     * <p>Deprecated, use the version that takes a `trigger` parameter below. This method will be
-     * removed once all callers are migrated.
      */
-    @Deprecated
     public void notifyKeysChanged() {
-        notifyKeysChanged(null);
-    }
-
-    /**
-     * Notifies all registered native clients (in practice, exactly one) that keys in the backend
-     * may have changed, which usually leads to refetching the keys from the backend.
-     *
-     * @param trigger The UI surface that triggered this notification, if any.
-     */
-    public void notifyKeysChanged(@Nullable @TrustedVaultUserActionTriggerForUMA Integer trigger) {
         for (long nativeTrustedVaultClientAndroid : mNativeTrustedVaultClientAndroidSet) {
-            TrustedVaultClientJni.get().notifyKeysChanged(nativeTrustedVaultClientAndroid, trigger);
+            TrustedVaultClientJni.get().notifyKeysChanged(nativeTrustedVaultClientAndroid);
         }
     }
 
@@ -296,7 +283,6 @@ public class TrustedVaultClient {
         Consumer<List<byte[]>> responseCb =
                 keys -> {
                     if (!isNativeRegistered(nativeTrustedVaultClientAndroid)) {
-                        // Native already unregistered, no response needed.
                         return;
                     }
                     TrustedVaultClientJni.get()
@@ -325,7 +311,6 @@ public class TrustedVaultClient {
         Consumer<Boolean> responseCallback =
                 succeeded -> {
                     if (!isNativeRegistered(nativeTrustedVaultClientAndroid)) {
-                        // Native already unregistered, no response needed.
                         return;
                     }
                     TrustedVaultClientJni.get()
@@ -334,8 +319,6 @@ public class TrustedVaultClient {
                 };
         get().mBackend
                 .markLocalKeysAsStale(accountInfo)
-                // If an exception occurred, it's unknown whether the operation made any
-                // difference. In doubt return true, since false positives are allowed.
                 .then(responseCallback::accept, exception -> responseCallback.accept(true));
     }
 
@@ -353,7 +336,6 @@ public class TrustedVaultClient {
         Consumer<Boolean> responseCallback =
                 isDegraded -> {
                     if (!isNativeRegistered(nativeTrustedVaultClientAndroid)) {
-                        // Native already unregistered, no response needed.
                         return;
                     }
                     TrustedVaultClientJni.get()
@@ -363,8 +345,6 @@ public class TrustedVaultClient {
 
         get().mBackend
                 .getIsRecoverabilityDegraded(accountInfo)
-                // If an exception occurred, it's unknown whether recoverability is degraded. In
-                // doubt reply with `false`, so the user isn't bothered with a prompt.
                 .then(responseCallback::accept, exception -> responseCallback.accept(false));
     }
 
@@ -384,7 +364,6 @@ public class TrustedVaultClient {
         Consumer<Boolean> responseCallback =
                 success -> {
                     if (!isNativeRegistered(nativeTrustedVaultClientAndroid)) {
-                        // Native already unregistered, no response needed.
                         return;
                     }
                     RecordHistogram.recordBooleanHistogram(
@@ -417,10 +396,7 @@ public class TrustedVaultClient {
 
         void addTrustedRecoveryMethodCompleted(long nativeTrustedVaultClientAndroid, int requestId);
 
-        void notifyKeysChanged(
-                long nativeTrustedVaultClientAndroid,
-                @JniType("std::optional<jint>") @Nullable @TrustedVaultUserActionTriggerForUMA
-                        Integer trigger);
+        void notifyKeysChanged(long nativeTrustedVaultClientAndroid);
 
         void notifyRecoverabilityChanged(long nativeTrustedVaultClientAndroid);
 

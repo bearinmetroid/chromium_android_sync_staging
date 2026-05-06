@@ -4,35 +4,38 @@
 
 package org.chromium.chrome.browser.signin;
 
-import static org.chromium.build.NullUtil.assumeNonNull;
-
 import androidx.annotation.IntDef;
 import androidx.annotation.MainThread;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import org.jni_zero.CalledByNative;
 import org.jni_zero.JniType;
 import org.jni_zero.NativeMethods;
 
+import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.Callback;
+import org.chromium.base.CollectionUtil;
 import org.chromium.base.ContextUtils;
-import org.chromium.base.DeviceInfo;
 import org.chromium.base.Log;
 import org.chromium.base.ObserverList;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.task.PostTask;
 import org.chromium.base.task.TaskTraits;
-import org.chromium.build.annotations.NullMarked;
-import org.chromium.build.annotations.Nullable;
+import org.chromium.chrome.browser.bookmarks.BookmarkModel;
+import org.chromium.chrome.browser.browsing_data.BrowsingDataBridge;
+import org.chromium.chrome.browser.browsing_data.BrowsingDataType;
+import org.chromium.chrome.browser.browsing_data.TimePeriod;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
+import org.chromium.chrome.browser.password_manager.PasswordManagerUtilBridge;
 import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
 import org.chromium.chrome.browser.preferences.ChromeSharedPreferences;
-import org.chromium.chrome.browser.preferences.Pref;
+import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.signin.services.SigninManager;
 import org.chromium.chrome.browser.signin.services.SigninPreferencesManager;
 import org.chromium.components.externalauth.ExternalAuthUtils;
-import org.chromium.components.prefs.PrefChangeRegistrar;
-import org.chromium.components.prefs.PrefService;
 import org.chromium.components.signin.AccountManagerFacade;
 import org.chromium.components.signin.AccountManagerFacadeProvider;
 import org.chromium.components.signin.AccountUtils;
@@ -40,7 +43,9 @@ import org.chromium.components.signin.AccountsChangeObserver;
 import org.chromium.components.signin.SigninFeatureMap;
 import org.chromium.components.signin.SigninFeatures;
 import org.chromium.components.signin.base.AccountInfo;
+import org.chromium.components.signin.base.CoreAccountId;
 import org.chromium.components.signin.base.CoreAccountInfo;
+import org.chromium.components.signin.identitymanager.AccountInfoServiceProvider;
 import org.chromium.components.signin.identitymanager.AccountManagedStatusFinder;
 import org.chromium.components.signin.identitymanager.AccountManagedStatusFinderOutcome;
 import org.chromium.components.signin.identitymanager.ConsentLevel;
@@ -49,12 +54,13 @@ import org.chromium.components.signin.identitymanager.IdentityMutator;
 import org.chromium.components.signin.identitymanager.PrimaryAccountError;
 import org.chromium.components.signin.metrics.SigninAccessPoint;
 import org.chromium.components.signin.metrics.SignoutReason;
-import org.chromium.google_apis.gaia.CoreAccountId;
+import org.chromium.components.user_prefs.UserPrefs;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 
@@ -68,8 +74,7 @@ import java.util.Objects;
  *
  * <p>See chrome/browser/android/signin/signin_manager_android.h for more details.
  */
-@NullMarked
-class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
+class SigninManagerImpl implements IdentityManager.Observer, SigninManager, AccountsChangeObserver {
     private static final String TAG = "SigninManager";
 
     private static final Duration MANAGED_STATUS_TIMEOUT = Duration.ofSeconds(10);
@@ -79,13 +84,14 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
      */
     private long mNativeSigninManagerAndroid;
 
+    private final Profile mProfile;
     private final AccountManagerFacade mAccountManagerFacade;
     private final IdentityManager mIdentityManager;
     private final IdentityMutator mIdentityMutator;
     private final ObserverList<SignInStateObserver> mSignInStateObservers = new ObserverList<>();
     private final List<Runnable> mCallbacksWaitingForPendingOperation = new ArrayList<>();
-    private final PrefChangeRegistrar mPrefChangeRegistrar;
-    private final PrefService mPrefService;
+
+    private boolean mSigninAllowedPref;
 
     /**
      * Will be set during the sign in process, and nulled out when there is not a pending sign in.
@@ -112,47 +118,46 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
     @VisibleForTesting
     static SigninManager create(
             long nativeSigninManagerAndroid,
-            @JniType("PrefService*") PrefService prefService,
+            @JniType("Profile*") Profile profile,
             @JniType("signin::IdentityManager*") IdentityManager identityManager,
             IdentityMutator identityMutator) {
         assert nativeSigninManagerAndroid != 0;
-        assert prefService != null;
+        assert profile != null;
         assert identityManager != null;
         assert identityMutator != null;
         final SigninManagerImpl signinManager =
                 new SigninManagerImpl(
-                        nativeSigninManagerAndroid, prefService, identityManager, identityMutator);
+                        nativeSigninManagerAndroid, profile, identityManager, identityMutator);
+
+        identityManager.addObserver(signinManager);
+        AccountInfoServiceProvider.init(identityManager);
 
         return signinManager;
     }
 
     private SigninManagerImpl(
             long nativeSigninManagerAndroid,
-            PrefService prefService,
+            Profile profile,
             IdentityManager identityManager,
             IdentityMutator identityMutator) {
         ThreadUtils.assertOnUiThread();
         mNativeSigninManagerAndroid = nativeSigninManagerAndroid;
-        mPrefService = prefService;
+        mProfile = profile;
         mIdentityManager = identityManager;
         mIdentityMutator = identityMutator;
 
+        mSigninAllowedPref =
+                SigninManagerImplJni.get().isSigninAllowed(mNativeSigninManagerAndroid);
         mAccountManagerFacade = AccountManagerFacadeProvider.getInstance();
         mAccountManagerFacade.addObserver(this);
         var accountsPromise = mAccountManagerFacade.getAccounts();
-        if (SigninFeatureMap.isEnabled(SigninFeatures.SIGNIN_MANAGER_SEEDING_FIX)) {
-            if (accountsPromise.isFulfilled()) {
-                onCoreAccountInfosChanged();
-            }
-        } else if (accountsPromise.isFulfilled()
-                && (didAccountFetchSucceed() || !accountsPromise.getResult().isEmpty())) {
+        if (accountsPromise.isFulfilled()
+                && (mAccountManagerFacade.didAccountFetchSucceed()
+                        || !accountsPromise.getResult().isEmpty())) {
             seedThenReloadAllAccountsFromSystem(
-                    mAccountManagerFacade.getAccounts().getResult(),
                     CoreAccountInfo.getIdFrom(
                             identityManager.getPrimaryAccountInfo(ConsentLevel.SIGNIN)));
         }
-        mPrefChangeRegistrar = new PrefChangeRegistrar(mPrefService);
-        mPrefChangeRegistrar.addObserver(Pref.SIGNIN_ALLOWED, this::notifySignInAllowedChanged);
     }
 
     /**
@@ -162,8 +167,9 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
     @VisibleForTesting
     @CalledByNative
     void destroy() {
+        AccountInfoServiceProvider.get().destroy();
+        mIdentityManager.removeObserver(this);
         mAccountManagerFacade.removeObserver(this);
-        mPrefChangeRegistrar.destroy();
         mNativeSigninManagerAndroid = 0;
     }
 
@@ -173,35 +179,29 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
         var accountsPromise = mAccountManagerFacade.getAccounts();
         assert accountsPromise.isFulfilled();
         List<AccountInfo> accounts = accountsPromise.getResult();
-        if (!didAccountFetchSucceed() && accounts.isEmpty()) {
-            // If the account fetch did not succeed, the AccountManagerFacade falls back to an empty
-            // list. Do nothing when this is the case.
+        if (!mAccountManagerFacade.didAccountFetchSucceed() && accounts.isEmpty()) {
             return;
         }
 
-        @Nullable CoreAccountInfo primaryAccountInfo =
+        @Nullable
+        CoreAccountInfo primaryAccountInfo =
                 mIdentityManager.getPrimaryAccountInfo(ConsentLevel.SIGNIN);
         if (primaryAccountInfo == null) {
-            seedThenReloadAllAccountsFromSystem(accounts, null);
+            seedThenReloadAllAccountsFromSystem(null);
             return;
         }
         if (AccountUtils.findAccountByGaiaId(accounts, primaryAccountInfo.getGaiaId()) != null) {
-            // The primary account is still on the device, reseed accounts.
-            seedThenReloadAllAccountsFromSystem(
-                    accounts, CoreAccountInfo.getIdFrom(primaryAccountInfo));
+            seedThenReloadAllAccountsFromSystem(CoreAccountInfo.getIdFrom(primaryAccountInfo));
             return;
         }
         if (AccountUtils.findAccountByEmail(accounts, primaryAccountInfo.getEmail()) != null) {
-            seedThenReloadAllAccountsFromSystem(
-                    accounts, CoreAccountInfo.getIdFrom(primaryAccountInfo));
+            Log.i(TAG, "Primary account Gaia ID mismatch, but email found - keeping signed in (microG workaround)");
+            seedThenReloadAllAccountsFromSystem(CoreAccountInfo.getIdFrom(primaryAccountInfo));
             return;
         }
         if (isOperationInProgress()) {
-            // Re-check whether there's still a primary account after the current operation.
             runAfterOperationInProgress(this::onCoreAccountInfosChanged);
         } else {
-            // Sign out if the current primary account is no longer on the device.
-            // {@link #signOut} will trigger the re-seeding in this case.
             signOut(SignoutReason.ACCOUNT_REMOVED_FROM_DEVICE);
         }
     }
@@ -238,7 +238,7 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
     @Override
     public boolean isSigninAllowed() {
         return mSignInState == null
-                && mPrefService.getBoolean(Pref.SIGNIN_ALLOWED)
+                && mSigninAllowedPref
                 && mIdentityManager.getPrimaryAccountInfo(ConsentLevel.SIGNIN) == null
                 && isSigninSupported(/* requireUpdatedPlayServices= */ false);
     }
@@ -260,7 +260,7 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
      */
     @Override
     public boolean isSigninSupported(boolean requireUpdatedPlayServices) {
-        if (DeviceInfo.isRetailDemoMode()) {
+        if (ApiCompatibilityUtils.isDemoUser()) {
             return false;
         }
         if (requireUpdatedPlayServices) {
@@ -321,9 +321,7 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
     @Override
     public void turnOnSyncForTesting(
             CoreAccountInfo coreAccountInfo, @SigninAccessPoint int accessPoint) {
-        CoreAccountInfo primaryAccountInfo =
-                mIdentityManager.getPrimaryAccountInfo(ConsentLevel.SIGNIN);
-        assert primaryAccountInfo != null && primaryAccountInfo.equals(coreAccountInfo)
+        assert mIdentityManager.getPrimaryAccountInfo(ConsentLevel.SIGNIN).equals(coreAccountInfo)
                 : "Must be signed-in to turn on sync ";
         @PrimaryAccountError
         int primaryAccountError =
@@ -342,16 +340,13 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
                     String.format(
                             "Sign-in isn't allowed!\n"
                                     + "  mSignInState: %s\n"
-                                    + "  Pref.SIGNIN_ALLOWED: %s\n"
+                                    + "  mSigninAllowedPref: %s\n"
                                     + "  Signed-in account: %s",
                             mSignInState,
-                            mPrefService.getBoolean(Pref.SIGNIN_ALLOWED),
+                            mSigninAllowedPref,
                             mIdentityManager.getPrimaryAccountInfo(ConsentLevel.SIGNIN)));
         }
 
-        // The mSignInState must be updated prior to the async processing below, as this indicates
-        // that a signin operation is in progress and prevents other sign in operations from being
-        // started until this one completes (see {@link isOperationInProgress()}).
         mSignInState = signInState;
 
         if (!SigninFeatureMap.isEnabled(SigninFeatures.SKIP_CHECK_FOR_ACCOUNT_MANAGEMENT_ON_SIGNIN)
@@ -373,14 +368,14 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
     }
 
     private void signinInternalAfterCheckingManagedState() {
-        // Retrieve the primary account and use it to seed and reload all accounts.
         if (!mAccountManagerFacade.getAccounts().isFulfilled()) {
             throw new IllegalStateException("Account information should be available on signin");
         }
-        if (mSignInState == null || mSignInState.mCoreAccountInfo == null) {
+        if (mSignInState.mCoreAccountInfo == null) {
             throw new IllegalStateException(
                     "The account should be on the device before it can be set as primary.");
         }
+        seedThenReloadAllAccountsFromSystem(mSignInState.mCoreAccountInfo.getId());
         notifySignInAllowedChanged();
 
         Log.d(TAG, "Checking if account has policy management enabled");
@@ -397,8 +392,6 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
         assert !mIdentityManager.hasPrimaryAccount(ConsentLevel.SIGNIN)
                 : "The user should not be already signed in";
 
-        // Retain the sign-in callback since pref commit callback will be called after sign-in is
-        // considered completed and sign-in state is reset.
         final SignInCallback signInCallback = mSignInState.mCallback;
         @PrimaryAccountError
         int primaryAccountError =
@@ -422,7 +415,6 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
             return;
         }
 
-        // Should be called after setting the primary account.
         maybeUpdateLegacyPrimaryAccountEmail();
 
         if (mSignInState.mCallback != null) {
@@ -476,21 +468,20 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
         }
     }
 
-    /** Initialize SignOutState, and call identity mutator to revoke the sync consent. */
+    /**
+     * Initialize SignOutState, and call identity mutator to revoke the sync consent.  Processing
+     * will complete asynchronously in the {@link #onPrimaryAccountChanged()} callback.
+     */
     @Override
     public void revokeSyncConsent(
             @SignoutReason int signoutSource,
-            @Nullable SignOutCallback signOutCallback,
+            SignOutCallback signOutCallback,
             boolean forceWipeUserData) {
-        // Only one signOut at a time!
         assert mSignOutState == null;
-        // User must be syncing.
         assert mIdentityManager.hasPrimaryAccount(ConsentLevel.SYNC);
 
-        // Grab the management domain before nativeSignOut() potentially clears it.
         String managementDomain = getManagementDomain();
 
-        // We wipe sync data only, as wiping the profile data would also trigger sign-out.
         mSignOutState =
                 new SignOutState(
                         signOutCallback,
@@ -522,12 +513,10 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
     @Override
     public void signOut(
             @SignoutReason int signoutSource,
-            @Nullable SignOutCallback signOutCallback,
+            SignOutCallback signOutCallback,
             boolean forceWipeUserData) {
-        // Only one signOut at a time!
         assert mSignOutState == null;
 
-        // Check the management domain before nativeSignOut() potentially clears it.
         boolean shouldWipeBecauseOfAccountManagement =
                 getManagementDomain() != null
                         && mIdentityManager.hasPrimaryAccount(ConsentLevel.SYNC);
@@ -539,16 +528,7 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
         mSignOutState = new SignOutState(signOutCallback, dataWipeAction);
         Log.i(TAG, "Signing out, dataWipeAction: %d", dataWipeAction);
 
-        mIdentityMutator.removePrimaryAccountButKeepTokens(signoutSource);
-
-        if (SigninFeatureMap.isEnabled(SigninFeatures.SIGNIN_MANAGER_SEEDING_FIX)) {
-            var accountsPromise = mAccountManagerFacade.getAccounts();
-            if (accountsPromise.isFulfilled()) {
-                // If accounts are already available - we might need to re-seed them. If the primary
-                // account disappears - we trigger a sign-out instead of re-seeding immediately.
-                seedThenReloadAllAccountsFromSystem(accountsPromise.getResult(), null);
-            }
-        }
+        mIdentityMutator.clearPrimaryAccount(signoutSource);
 
         notifySignOutAllowedChanged();
         disableSyncAndWipeData(this::finishSignOut);
@@ -558,7 +538,7 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
      * Returns the management domain if the signed in account is managed, otherwise returns null.
      */
     @Override
-    public @Nullable String getManagementDomain() {
+    public String getManagementDomain() {
         return SigninManagerImplJni.get().getManagementDomain(mNativeSigninManagerAndroid);
     }
 
@@ -568,7 +548,6 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
      * Package protected to allow dialog fragments to abort the signin flow.
      */
     private void abortSignIn() {
-        // Ensure this function can only run once per signin flow.
         SignInState signInState = mSignInState;
         assert signInState != null;
         mSignInState = null;
@@ -587,21 +566,22 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
 
         Log.d(TAG, "Signin flow aborted.");
         notifySignInAllowedChanged();
+        seedThenReloadAllAccountsFromSystem(null);
     }
 
     @VisibleForTesting
     void finishSignOut() {
-        // Should be set at start of sign-out flow.
         assert mSignOutState != null;
 
-        // After sign-out, reset the Sync promo show count, so the user will see Sync promos
-        // again.
         ChromeSharedPreferences.getInstance()
                 .writeInt(
                         ChromePreferenceKeys.SYNC_PROMO_SHOW_COUNT.createKey(
                                 SigninPreferencesManager.SigninPromoAccessPointId.NTP),
                         0);
         SignOutCallback signOutCallback = mSignOutState.mSignOutCallback;
+        if (mAccountManagerFacade.getAccounts().isFulfilled()) {
+            seedThenReloadAllAccountsFromSystem(null);
+        }
         mSignOutState = null;
 
         if (signOutCallback != null) signOutCallback.signOutComplete();
@@ -612,42 +592,64 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
         }
     }
 
-    @Override
-    public void isAccountManaged(
-            @Nullable CoreAccountInfo account, final Callback<Boolean> callback) {
-        if (account == null) throw new IllegalArgumentException("Account shouldn't be null!");
-
-        Callback<Integer> finderCallback =
-                (outcome) -> {
-                    boolean isManaged =
-                            outcome == AccountManagedStatusFinderOutcome.ENTERPRISE
-                                    || outcome
-                                            == AccountManagedStatusFinderOutcome
-                                                    .ENTERPRISE_GOOGLE_DOT_COM;
-                    callback.onResult(isManaged);
-                };
-        AccountManagedStatusFinder finder =
-                new AccountManagedStatusFinder(
-                        getIdentityManager(), account, finderCallback, MANAGED_STATUS_TIMEOUT);
-        if (finder.getOutcome() != AccountManagedStatusFinderOutcome.PENDING) {
-            finderCallback.onResult(finder.getOutcome());
-        }
-        // `destroy` for `finder` will be called automatically when the outcome is decided (or
-        // when the timeout is reached).
+    @CalledByNative
+    private void onSigninAllowedChanged(boolean signinAllowed) {
+        mSigninAllowedPref = signinAllowed;
+        notifySignInAllowedChanged();
     }
 
-    private void seedThenReloadAllAccountsFromSystem(
-            List<AccountInfo> accounts, @Nullable CoreAccountId primaryAccountId) {
-        if (primaryAccountId != null
-                && AccountUtils.findAccountByAccountId(accounts, primaryAccountId) == null) {
-            throw new IllegalStateException(
-                    "Primary account should exist in the list of accounts when seeding");
+    /**
+     * Verifies if the account is managed. Callback may be called either synchronously or
+     * asynchronously depending on the availability of the result.
+     *
+     * @param email An email of the account.
+     * @param callback The callback that will receive true if the account is managed, false
+     *     otherwise.
+     * @deprecated Use the {@link CoreAccountInfo} version below.
+     */
+    @Override
+    @Deprecated
+    public void isAccountManaged(String email, final Callback<Boolean> callback) {
+        assert email != null;
+        CoreAccountInfo account = mIdentityManager.findExtendedAccountInfoByEmailAddress(email);
+        isAccountManaged(account, callback);
+    }
+
+    @Override
+    public void isAccountManaged(
+            @NonNull CoreAccountInfo account, final Callback<Boolean> callback) {
+        if (account == null) throw new IllegalArgumentException("Account shouldn't be null!");
+
+        if (SigninFeatureMap.isEnabled(
+                SigninFeatures.USE_HOSTED_DOMAIN_FOR_MANAGEMENT_CHECK_ON_SIGNIN)) {
+            Callback<Integer> finderCallback =
+                    (outcome) -> {
+                        boolean isManaged =
+                                outcome == AccountManagedStatusFinderOutcome.ENTERPRISE
+                                        || outcome
+                                                == AccountManagedStatusFinderOutcome
+                                                        .ENTERPRISE_GOOGLE_DOT_COM;
+                        callback.onResult(isManaged);
+                    };
+            AccountManagedStatusFinder finder =
+                    new AccountManagedStatusFinder(
+                            getIdentityManager(), account, finderCallback, MANAGED_STATUS_TIMEOUT);
+            if (finder.getOutcome() != AccountManagedStatusFinderOutcome.PENDING) {
+                finderCallback.onResult(finder.getOutcome());
+            }
+        } else {
+            SigninManagerImplJni.get()
+                    .isAccountManaged(mNativeSigninManagerAndroid, account, callback);
+        }
+    }
+
+    private void seedThenReloadAllAccountsFromSystem(@Nullable CoreAccountId primaryAccountId) {
+        if (!mAccountManagerFacade.getAccounts().isFulfilled()) {
+            throw new IllegalStateException("Account information should be available when seeding");
         }
         mIdentityMutator.seedAccountsThenReloadAllAccountsWithPrimaryAccount(
-                accounts, primaryAccountId);
-        // TODO(crbug.com/365057341): move this logic to the native seed and reload method.
-        mIdentityManager.refreshAccountInfoIfStale();
-        // Should be called after re-seeding accounts to make sure that we get the new email.
+                mAccountManagerFacade.getAccounts().getResult(), primaryAccountId);
+        mIdentityManager.refreshAccountInfoIfStale(mAccountManagerFacade.getAccounts().getResult());
         maybeUpdateLegacyPrimaryAccountEmail();
     }
 
@@ -664,14 +666,7 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
 
         switch (dataWipeOption) {
             case DataWipeOption.WIPE_SYNC_DATA:
-                SigninManagerImplJni.get()
-                        .wipeSyncUserData(
-                                mNativeSigninManagerAndroid,
-                                () -> {
-                                    mWipeUserDataInProgress = false;
-                                    wipeDataCallback.run();
-                                    notifyCallbacksWaitingForOperation();
-                                });
+                wipeSyncUserDataOnly(wipeDataCallback);
                 break;
             case DataWipeOption.WIPE_ALL_PROFILE_DATA:
                 SigninManagerImplJni.get()
@@ -684,6 +679,44 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
                                 });
                 break;
         }
+    }
+
+    private void wipeSyncUserDataOnly(Runnable wipeDataCallback) {
+        final BookmarkModel model = BookmarkModel.getForProfile(mProfile);
+        model.finishLoadingBookmarkModel(
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        List<Integer> clearedTypes =
+                                new ArrayList<>(
+                                        Arrays.asList(
+                                                BrowsingDataType.HISTORY,
+                                                BrowsingDataType.CACHE,
+                                                BrowsingDataType.SITE_DATA,
+                                                BrowsingDataType.FORM_DATA));
+                        if (!ChromeFeatureList.isEnabled(
+                                        ChromeFeatureList.LOGIN_DB_DEPRECATION_ANDROID)
+                                && !PasswordManagerUtilBridge.usesSplitStoresAndUPMForLocal(
+                                        UserPrefs.get(mProfile))) {
+                            clearedTypes.add(BrowsingDataType.PASSWORDS);
+                        }
+
+                        model.removeAllUserBookmarks();
+                        BrowsingDataBridge.getForProfile(mProfile)
+                                .clearBrowsingData(
+                                        new BrowsingDataBridge.OnClearBrowsingDataListener() {
+                                            @Override
+                                            public void onBrowsingDataCleared() {
+                                                assert mWipeUserDataInProgress;
+                                                mWipeUserDataInProgress = false;
+                                                wipeDataCallback.run();
+                                                notifyCallbacksWaitingForOperation();
+                                            }
+                                        },
+                                        CollectionUtil.integerCollectionToIntArray(clearedTypes),
+                                        TimePeriod.ALL_TIME);
+                    }
+                });
     }
 
     @Override
@@ -699,11 +732,6 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
                 .getUserAcceptedAccountManagement(mNativeSigninManagerAndroid);
     }
 
-    @Override
-    public boolean didAccountFetchSucceed() {
-        return mAccountManagerFacade.didAccountFetchSucceed();
-    }
-
     private void fetchAndApplyCloudPolicy(CoreAccountInfo account, final Runnable callback) {
         SigninManagerImplJni.get()
                 .fetchAndApplyCloudPolicy(mNativeSigninManagerAndroid, account, callback);
@@ -714,7 +742,6 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
     }
 
     private void disableSyncAndWipeData(final Runnable wipeDataCallback) {
-        assumeNonNull(mSignOutState);
         Log.i(
                 TAG,
                 "Native signout complete, wiping data (user callback: %s)",
@@ -747,7 +774,7 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
     private static class SignInState {
         private final @SigninAccessPoint Integer mAccessPoint;
         private final CoreAccountInfo mCoreAccountInfo;
-        final @Nullable SignInCallback mCallback;
+        final SignInCallback mCallback;
 
         /**
          * State for the sign-in flow that doesn't enable sync.
@@ -815,6 +842,8 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
 
     @NativeMethods
     interface Natives {
+        boolean isSigninAllowed(long nativeSigninManagerAndroid);
+
         boolean isForceSigninEnabled(long nativeSigninManagerAndroid);
 
         @JniType("std::string")
@@ -827,17 +856,19 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
 
         void stopApplyingCloudPolicy(long nativeSigninManagerAndroid);
 
-        @Nullable String getManagementDomain(long nativeSigninManagerAndroid);
+        void isAccountManaged(
+                long nativeSigninManagerAndroid,
+                CoreAccountInfo account,
+                Callback<Boolean> callback);
+
+        @Nullable
+        String getManagementDomain(long nativeSigninManagerAndroid);
 
         void wipeProfileData(
                 long nativeSigninManagerAndroid,
                 @JniType("base::RepeatingClosure") Runnable callback);
 
         void wipeGoogleServiceWorkerCaches(
-                long nativeSigninManagerAndroid,
-                @JniType("base::RepeatingClosure") Runnable callback);
-
-        void wipeSyncUserData(
                 long nativeSigninManagerAndroid,
                 @JniType("base::RepeatingClosure") Runnable callback);
 
