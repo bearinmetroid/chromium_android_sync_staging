@@ -4,17 +4,37 @@
 
 package org.chromium.chrome.browser.sync;
 
+import android.app.PendingIntent;
+
 import org.chromium.base.Promise;
+import org.chromium.build.annotations.NullMarked;
+import org.chromium.build.annotations.ServiceImpl;
 import org.chromium.components.signin.base.CoreAccountInfo;
 
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * microG-compatible implementation of {@link TrustedVaultClient.Backend}.
+ *
+ * Suppresses encryption key retrieval errors by returning empty/fulfilled promises
+ * instead of rejections. Sync continues to work without client-side encryption.
+ *
+ * Discovered via ServiceLoader — the @ServiceImpl annotation generates META-INF/services
+ * entries so TrustedVaultClient uses this instead of EmptyBackend.
+ */
+@ServiceImpl(TrustedVaultClient.Backend.class)
+@NullMarked
 public class MicroGTrustedVaultBackend implements TrustedVaultClient.Backend {
 
     @Override
     public Promise<List<byte[]>> fetchKeys(CoreAccountInfo accountInfo) {
         return Promise.fulfilled(Collections.emptyList());
+    }
+
+    @Override
+    public Promise<PendingIntent> createKeyRetrievalIntent(CoreAccountInfo accountInfo) {
+        return Promise.fulfilled(null);
     }
 
     @Override
@@ -34,17 +54,12 @@ public class MicroGTrustedVaultBackend implements TrustedVaultClient.Backend {
     }
 
     @Override
-    public Promise<android.content.Intent> createKeyRetrievalIntent(CoreAccountInfo accountInfo) {
+    public Promise<PendingIntent> createRecoverabilityDegradedIntent(CoreAccountInfo accountInfo) {
         return Promise.fulfilled(null);
     }
 
     @Override
-    public Promise<android.content.Intent> createRecoverabilityDegradedIntent(CoreAccountInfo accountInfo) {
-        return Promise.fulfilled(null);
-    }
-
-    @Override
-    public Promise<android.content.Intent> createOptInIntent(CoreAccountInfo accountInfo) {
+    public Promise<PendingIntent> createOptInIntent(CoreAccountInfo accountInfo) {
         return Promise.fulfilled(null);
     }
 }

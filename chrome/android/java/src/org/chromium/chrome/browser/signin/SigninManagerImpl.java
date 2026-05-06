@@ -174,8 +174,6 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
         assert accountsPromise.isFulfilled();
         List<AccountInfo> accounts = accountsPromise.getResult();
         if (!didAccountFetchSucceed() && accounts.isEmpty()) {
-            // If the account fetch did not succeed, the AccountManagerFacade falls back to an empty
-            // list. Do nothing when this is the case.
             return;
         }
 
@@ -186,22 +184,19 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
             return;
         }
         if (AccountUtils.findAccountByGaiaId(accounts, primaryAccountInfo.getGaiaId()) != null) {
-            // The primary account is still on the device, reseed accounts.
             seedThenReloadAllAccountsFromSystem(
                     accounts, CoreAccountInfo.getIdFrom(primaryAccountInfo));
             return;
         }
         if (AccountUtils.findAccountByEmail(accounts, primaryAccountInfo.getEmail()) != null) {
+            Log.i(TAG, "Primary account Gaia ID mismatch, but email found - keeping signed in (microG workaround)");
             seedThenReloadAllAccountsFromSystem(
                     accounts, CoreAccountInfo.getIdFrom(primaryAccountInfo));
             return;
         }
         if (isOperationInProgress()) {
-            // Re-check whether there's still a primary account after the current operation.
             runAfterOperationInProgress(this::onCoreAccountInfosChanged);
         } else {
-            // Sign out if the current primary account is no longer on the device.
-            // {@link #signOut} will trigger the re-seeding in this case.
             signOut(SignoutReason.ACCOUNT_REMOVED_FROM_DEVICE);
         }
     }
@@ -349,9 +344,6 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
                             mIdentityManager.getPrimaryAccountInfo(ConsentLevel.SIGNIN)));
         }
 
-        // The mSignInState must be updated prior to the async processing below, as this indicates
-        // that a signin operation is in progress and prevents other sign in operations from being
-        // started until this one completes (see {@link isOperationInProgress()}).
         mSignInState = signInState;
 
         if (!SigninFeatureMap.isEnabled(SigninFeatures.SKIP_CHECK_FOR_ACCOUNT_MANAGEMENT_ON_SIGNIN)
@@ -373,7 +365,6 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
     }
 
     private void signinInternalAfterCheckingManagedState() {
-        // Retrieve the primary account and use it to seed and reload all accounts.
         if (!mAccountManagerFacade.getAccounts().isFulfilled()) {
             throw new IllegalStateException("Account information should be available on signin");
         }
@@ -397,8 +388,6 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
         assert !mIdentityManager.hasPrimaryAccount(ConsentLevel.SIGNIN)
                 : "The user should not be already signed in";
 
-        // Retain the sign-in callback since pref commit callback will be called after sign-in is
-        // considered completed and sign-in state is reset.
         final SignInCallback signInCallback = mSignInState.mCallback;
         @PrimaryAccountError
         int primaryAccountError =
@@ -422,7 +411,6 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
             return;
         }
 
-        // Should be called after setting the primary account.
         maybeUpdateLegacyPrimaryAccountEmail();
 
         if (mSignInState.mCallback != null) {
@@ -482,15 +470,11 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
             @SignoutReason int signoutSource,
             @Nullable SignOutCallback signOutCallback,
             boolean forceWipeUserData) {
-        // Only one signOut at a time!
         assert mSignOutState == null;
-        // User must be syncing.
         assert mIdentityManager.hasPrimaryAccount(ConsentLevel.SYNC);
 
-        // Grab the management domain before nativeSignOut() potentially clears it.
         String managementDomain = getManagementDomain();
 
-        // We wipe sync data only, as wiping the profile data would also trigger sign-out.
         mSignOutState =
                 new SignOutState(
                         signOutCallback,
@@ -524,10 +508,8 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
             @SignoutReason int signoutSource,
             @Nullable SignOutCallback signOutCallback,
             boolean forceWipeUserData) {
-        // Only one signOut at a time!
         assert mSignOutState == null;
 
-        // Check the management domain before nativeSignOut() potentially clears it.
         boolean shouldWipeBecauseOfAccountManagement =
                 getManagementDomain() != null
                         && mIdentityManager.hasPrimaryAccount(ConsentLevel.SYNC);
@@ -544,8 +526,6 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
         if (SigninFeatureMap.isEnabled(SigninFeatures.SIGNIN_MANAGER_SEEDING_FIX)) {
             var accountsPromise = mAccountManagerFacade.getAccounts();
             if (accountsPromise.isFulfilled()) {
-                // If accounts are already available - we might need to re-seed them. If the primary
-                // account disappears - we trigger a sign-out instead of re-seeding immediately.
                 seedThenReloadAllAccountsFromSystem(accountsPromise.getResult(), null);
             }
         }
@@ -568,7 +548,6 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
      * Package protected to allow dialog fragments to abort the signin flow.
      */
     private void abortSignIn() {
-        // Ensure this function can only run once per signin flow.
         SignInState signInState = mSignInState;
         assert signInState != null;
         mSignInState = null;
@@ -591,11 +570,8 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
 
     @VisibleForTesting
     void finishSignOut() {
-        // Should be set at start of sign-out flow.
         assert mSignOutState != null;
 
-        // After sign-out, reset the Sync promo show count, so the user will see Sync promos
-        // again.
         ChromeSharedPreferences.getInstance()
                 .writeInt(
                         ChromePreferenceKeys.SYNC_PROMO_SHOW_COUNT.createKey(
@@ -632,8 +608,6 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
         if (finder.getOutcome() != AccountManagedStatusFinderOutcome.PENDING) {
             finderCallback.onResult(finder.getOutcome());
         }
-        // `destroy` for `finder` will be called automatically when the outcome is decided (or
-        // when the timeout is reached).
     }
 
     private void seedThenReloadAllAccountsFromSystem(
@@ -645,9 +619,7 @@ class SigninManagerImpl implements SigninManager, AccountsChangeObserver {
         }
         mIdentityMutator.seedAccountsThenReloadAllAccountsWithPrimaryAccount(
                 accounts, primaryAccountId);
-        // TODO(crbug.com/365057341): move this logic to the native seed and reload method.
         mIdentityManager.refreshAccountInfoIfStale();
-        // Should be called after re-seeding accounts to make sure that we get the new email.
         maybeUpdateLegacyPrimaryAccountEmail();
     }
 

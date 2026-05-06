@@ -149,7 +149,6 @@ public class TrustedVaultClient {
 
     private Backend mBackend;
 
-    // Registered native TrustedVaultClientAndroid instances. Usually exactly one.
     private final Set<Long> mNativeTrustedVaultClientAndroidSet = new TreeSet<>();
 
     @VisibleForTesting
@@ -167,6 +166,12 @@ public class TrustedVaultClient {
     /**
      * Displays a UI that allows the user to reauthenticate and retrieve the sync encryption keys.
      *
+     * PATCH: Directly instantiate MicroGTrustedVaultBackend instead of using ServiceLoader.
+     * ServiceLoader fails to find the backend because @ServiceImpl annotation processing
+     * doesn't generate META-INF/services entries in Android builds.
+     * MicroGTrustedVaultBackend suppresses "Verify it's you" notifications by:
+     * - getIsRecoverabilityDegraded() returns false
+     * - createKeyRetrievalIntent() returns fulfilled(null) instead of rejected()
      */
     public static TrustedVaultClient get() {
         if (sInstance == null) {
@@ -296,7 +301,6 @@ public class TrustedVaultClient {
         Consumer<List<byte[]>> responseCb =
                 keys -> {
                     if (!isNativeRegistered(nativeTrustedVaultClientAndroid)) {
-                        // Native already unregistered, no response needed.
                         return;
                     }
                     TrustedVaultClientJni.get()
@@ -325,7 +329,6 @@ public class TrustedVaultClient {
         Consumer<Boolean> responseCallback =
                 succeeded -> {
                     if (!isNativeRegistered(nativeTrustedVaultClientAndroid)) {
-                        // Native already unregistered, no response needed.
                         return;
                     }
                     TrustedVaultClientJni.get()
@@ -334,8 +337,6 @@ public class TrustedVaultClient {
                 };
         get().mBackend
                 .markLocalKeysAsStale(accountInfo)
-                // If an exception occurred, it's unknown whether the operation made any
-                // difference. In doubt return true, since false positives are allowed.
                 .then(responseCallback::accept, exception -> responseCallback.accept(true));
     }
 
@@ -353,7 +354,6 @@ public class TrustedVaultClient {
         Consumer<Boolean> responseCallback =
                 isDegraded -> {
                     if (!isNativeRegistered(nativeTrustedVaultClientAndroid)) {
-                        // Native already unregistered, no response needed.
                         return;
                     }
                     TrustedVaultClientJni.get()
@@ -363,8 +363,6 @@ public class TrustedVaultClient {
 
         get().mBackend
                 .getIsRecoverabilityDegraded(accountInfo)
-                // If an exception occurred, it's unknown whether recoverability is degraded. In
-                // doubt reply with `false`, so the user isn't bothered with a prompt.
                 .then(responseCallback::accept, exception -> responseCallback.accept(false));
     }
 
@@ -384,7 +382,6 @@ public class TrustedVaultClient {
         Consumer<Boolean> responseCallback =
                 success -> {
                     if (!isNativeRegistered(nativeTrustedVaultClientAndroid)) {
-                        // Native already unregistered, no response needed.
                         return;
                     }
                     RecordHistogram.recordBooleanHistogram(
