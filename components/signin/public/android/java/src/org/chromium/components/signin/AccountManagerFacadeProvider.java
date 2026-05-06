@@ -19,14 +19,10 @@ import org.chromium.build.annotations.Nullable;
  */
 @NullMarked
 public class AccountManagerFacadeProvider {
-    // Holder needed to avoid init on instrumentation thread in tests.
     private static class Holder {
         private static final AccountManagerFacade INSTANCE;
 
         static {
-            // PATCH: Directly instantiate MicroGAccountManagerDelegate instead of using
-            // ServiceLoader. The @ServiceImpl annotation processing doesn't generate
-            // META-INF/services files in this build configuration, so ServiceLoader fails.
             AccountManagerDelegate delegate = new MicroGAccountManagerDelegate();
             INSTANCE = new AccountManagerFacadeImpl(delegate);
         }
